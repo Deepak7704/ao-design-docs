@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Orchestrator — Design Docs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f2efe7;
+        --panel: #fffdf8;
+        --ink: #1f1a16;
+        --muted: #6f6357;
+        --brand: #165a72;
+        --line: #dfd3c2;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        color: var(--ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        line-height: 1.65;
+        background:
+          radial-gradient(circle at 12% 10%, #ebdfcb 0%, transparent 35%),
+          radial-gradient(circle at 88% 85%, #e5d4ba 0%, transparent 30%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 4rem;
+      }
+
+      h1, h2 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      h1 {
+        font-size: 2.2rem;
+        margin-bottom: 0.4rem;
+      }
+
+      .tagline {
+        color: var(--muted);
+        font-size: 1rem;
+        margin-bottom: 2.5rem;
+      }
+
+      .section-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 0.75rem;
+        margin-top: 2rem;
+      }
+
+      .cards {
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .card {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        padding: 1.1rem 1.4rem;
+        text-decoration: none;
+        color: var(--ink);
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+
+      .card:hover {
+        border-color: var(--brand);
+        box-shadow: 0 2px 12px rgba(22, 90, 114, 0.08);
+      }
+
+      .card h3 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+        font-size: 1.1rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .card p {
+        color: var(--muted);
+        font-size: 0.88rem;
+        margin: 0;
+      }
+
+      .meta {
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        margin-left: 0.5rem;
+        vertical-align: middle;
+      }
+
+      .meta-pr { background: #dbeef4; color: var(--brand); }
+      .meta-issue { background: #f3ebe0; color: #8a7560; }
+
+      .footer {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .footer a { color: var(--brand); }
+
+      @media (max-width: 600px) {
+        h1 { font-size: 1.6rem; }
+        .card { padding: 0.9rem 1rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Agent Orchestrator</h1>
+      <p class="tagline">Design documents for <a href="https://github.com/ComposioHQ/agent-orchestrator">ComposioHQ/agent-orchestrator</a> — by Deepak Veluvolu</p>
+
+      <p class="section-label">Design Docs</p>
+      <div class="cards">
+        <a href="issue-456-race-condition.html" class="card">
+          <h3>Startup Race Condition <span class="meta meta-pr">PR #471</span> <span class="meta meta-issue">Issue #456</span></h3>
+          <p>Dashboard showed "Exited" when polling before orchestrator tmux session existed. Reorders startup sequence with cleanup error handling.</p>
+        </a>
+
+        <a href="issue-489-linux-arm64-fix.html" class="card">
+          <h3>Graceful node-pty on linux-arm64 <span class="meta meta-pr">PR #505</span> <span class="meta meta-issue">Issue #489</span></h3>
+          <p>Dashboard graceful degradation when node-pty prebuilt binaries are missing on ARM64 platforms (AWS t4g instances).</p>
+        </a>
+
+        <a href="issue-564-send-message-enter-race.html" class="card">
+          <h3>Bracketed Paste &amp; Adaptive Retry <span class="meta meta-pr">PR #571</span> <span class="meta meta-issue">Issue #564</span></h3>
+          <p>Enter key race condition in <code>ao send</code>. Implements bracketed paste mode with exponential backoff retry.</p>
+        </a>
+
+        <a href="ast-metadata-parser.html" class="card">
+          <h3>AST Parsing for Metadata Hooks <span class="meta meta-pr">PR #609</span> <span class="meta meta-issue">Issue #324</span></h3>
+          <p>Replace regex command detection with inline JavaScript AST parser to handle <code>cd /path && gh pr create</code> patterns.</p>
+        </a>
+
+        <a href="github-rate-limit-fix.html" class="card">
+          <h3>GitHub Rate Limit Fix <span class="meta meta-issue">Issue #617</span></h3>
+          <p>~60% API call reduction via request deduplication and batched PR field queries. No caching, no invalidation complexity.</p>
+        </a>
+      </div>
+
+      <div class="footer">
+        <p><a href="https://github.com/Deepak7704">Deepak Veluvolu</a> · <a href="https://github.com/ComposioHQ/agent-orchestrator">ComposioHQ/agent-orchestrator</a></p>
+      </div>
+    </main>
+  </body>
+</html>

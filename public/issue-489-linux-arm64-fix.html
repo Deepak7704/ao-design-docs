@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Issue #489: Dashboard fails on linux-arm64 due to missing
+node-pty prebuilt binary — Agent Orchestrator Design</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f2efe7;
+        --panel: #fffdf8;
+        --ink: #1f1a16;
+        --muted: #6f6357;
+        --brand: #165a72;
+        --line: #dfd3c2;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        color: var(--ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        line-height: 1.65;
+        background:
+          radial-gradient(circle at 12% 10%, #ebdfcb 0%, transparent 35%),
+          radial-gradient(circle at 88% 85%, #e5d4ba 0%, transparent 30%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .back {
+        display: inline-block;
+        margin-bottom: 1.5rem;
+        color: var(--brand);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      .back:hover { text-decoration: underline; }
+
+      h1, h2, h3, h4 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      h1 {
+        font-size: 2rem;
+        line-height: 1.25;
+        margin-bottom: 0.3rem;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h2 {
+        font-size: 1.45rem;
+        margin-top: 2.5rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h3 {
+        font-size: 1.15rem;
+        margin-top: 1.8rem;
+        margin-bottom: 0.4rem;
+      }
+
+      h4 {
+        font-size: 1rem;
+        margin-top: 1.4rem;
+        margin-bottom: 0.3rem;
+      }
+
+      p { margin: 0.7rem 0; }
+
+      ul, ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      li { margin-bottom: 0.25rem; }
+
+      a { color: var(--brand); }
+
+      code {
+        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+        background: #f3ebe0;
+        border-radius: 4px;
+        padding: 0.12rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      pre {
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #faf4ec;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.85em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--line);
+      }
+
+      th {
+        background: #f3ebe0;
+        font-weight: 600;
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      tr:nth-child(even) td { background: #fdfbf7; }
+
+      blockquote {
+        margin: 1rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--brand);
+        background: var(--panel);
+        border-radius: 0 10px 10px 0;
+        color: var(--muted);
+      }
+
+      blockquote p { margin: 0.3rem 0; }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--line);
+        margin: 2rem 0;
+      }
+
+      strong { font-weight: 600; }
+
+      .content {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        padding: 2rem 2.5rem;
+      }
+
+      @media (max-width: 600px) {
+        .content { padding: 1.2rem 1rem; }
+        h1 { font-size: 1.5rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <a href="/" class="back">← All Design Docs</a>
+      <div class="content">
+<h1
+id="issue-489-dashboard-fails-on-linux-arm64-due-to-missing-node-pty-prebuilt-binary">Issue
+#489: Dashboard fails on linux-arm64 due to missing node-pty prebuilt
+binary</h1>
+<h2 id="problem-statement">Problem Statement</h2>
+<p>The dashboard fails to start on linux-arm64 platforms (e.g., AWS t4g
+instances) because: 1. <code>node-pty</code> does not provide prebuilt
+binaries for linux-arm64 2. Building from source requires build tools
+(gcc, make, node-gyp) 3. Without build tools, <code>node-pty</code>
+fails to load during the direct-terminal-ws import 4. This causes the
+entire dashboard process to crash when <code>pnpm dev</code> runs</p>
+<h2 id="root-cause">Root Cause</h2>
+<p>The <code>direct-terminal-ws.ts</code> module statically imports
+<code>node-pty</code> at the top level:</p>
+<pre class="typescript"><code>import { spawn as ptySpawn, type IPty } from &quot;node-pty&quot;;</code></pre>
+<p>When <code>node-pty</code> cannot load (missing binary), the import
+throws an error that: 1. Escapes any try-catch in the calling code 2.
+Terminates the Node.js process 3. Causes <code>concurrently</code> to
+abort, killing all dev servers (Next.js, ttyd, direct-terminal)</p>
+<h2 id="solution-graceful-degradation">Solution: Graceful
+Degradation</h2>
+<p>Allow the dashboard to start even when <code>node-pty</code> is
+unavailable. Users fall back to the ttyd terminal on port 14800.</p>
+<h3 id="implementation">Implementation</h3>
+<h4 id="dynamic-import-with-try-catch">1. Dynamic Import with
+Try-Catch</h4>
+<p>Replace static import with dynamic import wrapped in try-catch:</p>
+<pre class="typescript"><code>let ptySpawn: typeof import(&quot;node-pty&quot;).spawn | null = null;
+let nodePtyLoadError: string | null = null;
+
+try {
+  const pty = await import(&quot;node-pty&quot;);
+  ptySpawn = pty.spawn;
+} catch (err) {
+  nodePtyLoadError = err instanceof Error ? err.message : String(err);
+  console.error(&quot;[DirectTerminal] Failed to load node-pty:&quot;, nodePtyLoadError);
+  console.error(&quot;[DirectTerminal] This is expected on linux-arm64 without build tools installed.&quot;);
+  console.error(&quot;[DirectTerminal] Falling back to ttyd terminal on port 14800.&quot;);
+  console.error(&quot;[DirectTerminal] To enable direct-terminal, install build tools:&quot;);
+  console.error(&quot;[DirectTerminal]   sudo apt-get install build-essential &amp;&amp; pnpm install&quot;);
+
+  // Exit cleanly (code 0) when running as main module, but allow tests to import
+  const isMainModule =
+    process.argv[1]?.endsWith(&quot;direct-terminal-ws.ts&quot;) ||
+    process.argv[1]?.endsWith(&quot;direct-terminal-ws.js&quot;);
+  if (isMainModule) {
+    process.exit(0);
+  }
+}</code></pre>
+<p><strong>Key Design Decision:</strong> Exit with code 0 (success) only
+when running as the main module. This ensures: -
+<code>concurrently</code> continues running other processes - Users can
+still access the dashboard and ttyd terminal - No manual intervention
+required to start the dashboard - Tests can import the module without
+premature exit</p>
+<h4 id="update-createdirectterminalserver-signature">2. Update
+createDirectTerminalServer Signature</h4>
+<p>Pass the spawn function as a parameter instead of using a global:</p>
+<pre class="typescript"><code>export function createDirectTerminalServer(
+  tmuxPath?: string,
+  ptySpawnFn: SpawnFunction,
+): DirectTerminalServer {
+  // Use ptySpawnFn to spawn PTYs
+}</code></pre>
+<p><strong>Rationale:</strong> - Tests can inject a mock spawn function
+- Production code uses the loaded <code>ptySpawn</code> via
+<code>ensurePtySpawn()</code> - Fails fast if spawn function is null
+with a clear error message</p>
+<h4 id="add-non-null-check">3. Add Non-Null Check</h4>
+<pre class="typescript"><code>function ensurePtySpawn(): asserts ptySpawn {
+  if (!ptySpawn) {
+    throw new Error(&quot;[DirectTerminal] ptySpawn not available - node-pty failed to load&quot;);
+  }
+  return ptySpawn;
+}</code></pre>
+<p>Called only in standalone execution path, not in tests.</p>
+<h4 id="update-devdirect-terminal-script">4. Update dev:direct-terminal
+Script</h4>
+<pre class="json"><code>&quot;dev:direct-terminal&quot;: &quot;tsx watch server/direct-terminal-ws.ts&quot;</code></pre>
+<p><strong>Key Design Principle:</strong> The process controls its own
+exit codes: - <code>process.exit(0)</code> when node-pty is gracefully
+unavailable (not an error condition) - Non-zero exit codes for real
+errors that should surface to developers</p>
+<p>This allows <code>concurrently</code> to continue running other
+processes for graceful failures while surfacing actual bugs.</p>
+<h2 id="flow-diagrams">Flow Diagrams</h2>
+<h3 id="normal-flow-node-pty-available">Normal Flow (node-pty
+available)</h3>
+<pre><code>1. pnpm dev
+   ↓
+2. concurrently runs:
+   - next dev
+   - tsx watch server/terminal-websocket.ts (ttyd)
+   - tsx watch server/direct-terminal-ws.ts
+   ↓
+3. direct-terminal-ws.ts imports node-pty successfully
+   ↓
+4. Server starts on port 14801
+   ↓
+5. Dashboard shows &quot;Direct Terminal&quot; option
+   ↓
+6. User connects via xterm.js → tmux session</code></pre>
+<h3 id="linux-arm64-flow-node-pty-unavailable">Linux-ARM64 Flow
+(node-pty unavailable)</h3>
+<pre><code>1. pnpm dev
+   ↓
+2. concurrently runs:
+   - next dev
+   - tsx watch server/terminal-websocket.ts (ttyd)
+   - tsx watch server/direct-terminal-ws.ts
+   ↓
+3. direct-terminal-ws.ts import fails
+   ↓
+4. Try-catch catches error
+   ↓
+5. Logs helpful messages to console
+   ↓
+6. Exits with code 0 (clean exit)
+   ↓
+7. Exit code 0 allows concurrently to continue running other processes
+   ↓
+8. concurrently continues running next dev and ttyd
+   ↓
+9. Dashboard shows &quot;Ttyd Terminal&quot; option only
+   ↓
+10. User connects via ttyd → tmux session</code></pre>
+<h2 id="testing">Testing</h2>
+<h3 id="unit-tests">Unit Tests</h3>
+<p>File:
+<code>packages/web/server/__tests__/node-pty-graceful-failure.test.ts</code></p>
+<p>Tests: 1. Module can be imported without crashing 2.
+<code>createDirectTerminalServer</code> accepts mocked
+<code>ptySpawnFn</code> 3. Server is created successfully with mock
+spawn function</p>
+<h3 id="integration-tests">Integration Tests</h3>
+<p>File:
+<code>packages/web/server/__tests__/direct-terminal-ws.integration.test.ts</code></p>
+<p>Tests: 1. Full WebSocket connection flow 2. Terminal I/O (echo,
+resize, special keys) 3. Connection lifecycle (connect, disconnect,
+errors) 4. Session resolution (exact and hash-prefixed)</p>
+<p><strong>Note:</strong> Tests use a real <code>node-pty</code> spawn
+function because they run on platforms with prebuilt binaries (typically
+x64 macOS/Linux).</p>
+<h2 id="user-experience">User Experience</h2>
+<h3 id="on-linux-arm64-without-build-tools">On linux-arm64 without build
+tools:</h3>
+<pre><code>$ pnpm dev
+
+&gt; @composio/ao-web@0.1.0 dev /home/deepak/agent-orchestrator
+&gt; concurrently &quot;npm:dev:next&quot; &quot;npm:dev:terminal&quot; &quot;npm:dev:direct-terminal&quot;
+
+[0] [Next] Ready on http://localhost:3000
+[1] [Ttyd] WebSocket server listening on port 14800
+[2] [DirectTerminal] Failed to load node-pty: Error: .../pty.node: cannot open shared object file
+[2] [DirectTerminal] This is expected on linux-arm64 without build tools installed.
+[2] [DirectTerminal] Falling back to ttyd terminal on port 14800.
+[2] [DirectTerminal] To enable direct-terminal, install build tools:
+[2] [DirectTerminal]   sudo apt-get install build-essential &amp;&amp; pnpm install
+[2] [DirectTerminal] Server stopped</code></pre>
+<p>Dashboard loads at http://localhost:3000 and shows the ttyd terminal
+option.</p>
+<h3 id="after-installing-build-tools">After installing build tools:</h3>
+<pre class="bash"><code>$ sudo apt-get install build-essential
+$ pnpm install
+# postinstall script rebuilds node-pty from source
+$ pnpm dev
+
+&gt; @composio/ao-web@0.1.0 dev /home/deepak/agent-orchestrator
+&gt; concurrently &quot;npm:dev:next&quot; &quot;npm:dev:terminal&quot; &quot;npm:dev:direct-terminal&quot;
+
+[0] [Next] Ready on http://localhost:3000
+[1] [Ttyd] WebSocket server listening on port 14800
+[2] [DirectTerminal] WebSocket server listening on port 14801</code></pre>
+<p>Dashboard shows both terminal options.</p>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-provide-prebuilt-linux-arm64-binaries">Alternative
+1: Provide Prebuilt linux-arm64 Binaries</h3>
+<p><strong>Pros:</strong> - Full feature parity on linux-arm64 - No user
+action required</p>
+<p><strong>Cons:</strong> - Requires CI to build for linux-arm64 -
+Larger package size - Still doesn’t solve other platforms (e.g., Windows
+ARM) - Doesn’t help users without internet access to download
+binaries</p>
+<h3 id="alternative-2-use-ttyd-as-default-terminal">Alternative 2: Use
+ttyd as Default Terminal</h3>
+<p><strong>Pros:</strong> - No native module dependencies - Works
+everywhere</p>
+<p><strong>Cons:</strong> - Loses XDA (Extended Device Attributes)
+support - Can’t implement clipboard in tmux sessions - Additional
+process (ttyd binary) to manage</p>
+<h3 id="alternative-3-fail-build-instead-of-runtime">Alternative 3: Fail
+Build Instead of Runtime</h3>
+<p><strong>Pros:</strong> - Early detection of missing node-pty -
+Clearer error messages for developers</p>
+<p><strong>Cons:</strong> - Breaks deployment on linux-arm64 - Requires
+build tools in production environments - Doesn’t allow graceful
+degradation</p>
+<h2 id="security-considerations">Security Considerations</h2>
+<ul>
+<li>The process.exit(0) in the catch block is intentional and safe
+because:
+<ul>
+<li>It only exits the direct-terminal-ws subprocess</li>
+<li>Other processes (Next.js, ttyd) continue running</li>
+<li>Dashboard remains functional with ttyd terminal fallback</li>
+</ul></li>
+</ul>
+<h2 id="trade-offs">Trade-offs</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 32%" />
+<col style="width: 41%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Aspect</th>
+<th>With Fix</th>
+<th>Without Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Dashboard starts on linux-arm64</td>
+<td>✅ Yes</td>
+<td>❌ No</td>
+</tr>
+<tr class="even">
+<td>Direct terminal on linux-arm64</td>
+<td>⚠️ Requires build tools</td>
+<td>❌ No (dashboard fails)</td>
+</tr>
+<tr class="odd">
+<td>ttyd terminal on linux-arm64</td>
+<td>✅ Yes (fallback)</td>
+<td>❌ No (dashboard fails)</td>
+</tr>
+<tr class="even">
+<td>Developer experience on x64</td>
+<td>✅ Same</td>
+<td>✅ Same</td>
+</tr>
+<tr class="odd">
+<td>Complexity</td>
+<td>Low (try-catch wrapper)</td>
+<td>N/A</td>
+</tr>
+<tr class="even">
+<td>Risk</td>
+<td>Low (tested, documented)</td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<h2 id="implementation-checklist">Implementation Checklist</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" />Wrap node-pty import in
+try-catch</label></li>
+<li><label><input type="checkbox" checked="" />Exit with code 0 on
+import failure</label></li>
+<li><label><input type="checkbox" checked="" />Update
+createDirectTerminalServer signature to accept ptySpawnFn</label></li>
+<li><label><input type="checkbox" checked="" />Add ensurePtySpawn()
+non-null check</label></li>
+<li><label><input type="checkbox" checked="" />Keep dev:direct-terminal
+script clean (process controls its exit codes)</label></li>
+<li><label><input type="checkbox" checked="" />Add unit tests for
+graceful failure</label></li>
+<li><label><input type="checkbox" checked="" />Update integration tests
+to pass mock ptySpawn</label></li>
+<li><label><input type="checkbox" checked="" />Create design
+documentation</label></li>
+</ul>
+<h2 id="related-issues">Related Issues</h2>
+<ul>
+<li>Issue #489: Dashboard fails on linux-arm64 due to missing
+node-pty</li>
+<li>PR #58: Original direct-terminal implementation</li>
+<li>TROUBLESHOOTING.md: Instructions for rebuilding node-pty
+manually</li>
+</ul>
+      </div>
+    </main>
+  </body>
+</html>

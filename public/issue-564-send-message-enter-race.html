@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Design: Fix ao send message Enter race condition (Issue
+#564) — Agent Orchestrator Design</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f2efe7;
+        --panel: #fffdf8;
+        --ink: #1f1a16;
+        --muted: #6f6357;
+        --brand: #165a72;
+        --line: #dfd3c2;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        color: var(--ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        line-height: 1.65;
+        background:
+          radial-gradient(circle at 12% 10%, #ebdfcb 0%, transparent 35%),
+          radial-gradient(circle at 88% 85%, #e5d4ba 0%, transparent 30%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .back {
+        display: inline-block;
+        margin-bottom: 1.5rem;
+        color: var(--brand);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      .back:hover { text-decoration: underline; }
+
+      h1, h2, h3, h4 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      h1 {
+        font-size: 2rem;
+        line-height: 1.25;
+        margin-bottom: 0.3rem;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h2 {
+        font-size: 1.45rem;
+        margin-top: 2.5rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h3 {
+        font-size: 1.15rem;
+        margin-top: 1.8rem;
+        margin-bottom: 0.4rem;
+      }
+
+      h4 {
+        font-size: 1rem;
+        margin-top: 1.4rem;
+        margin-bottom: 0.3rem;
+      }
+
+      p { margin: 0.7rem 0; }
+
+      ul, ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      li { margin-bottom: 0.25rem; }
+
+      a { color: var(--brand); }
+
+      code {
+        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+        background: #f3ebe0;
+        border-radius: 4px;
+        padding: 0.12rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      pre {
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #faf4ec;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.85em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--line);
+      }
+
+      th {
+        background: #f3ebe0;
+        font-weight: 600;
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      tr:nth-child(even) td { background: #fdfbf7; }
+
+      blockquote {
+        margin: 1rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--brand);
+        background: var(--panel);
+        border-radius: 0 10px 10px 0;
+        color: var(--muted);
+      }
+
+      blockquote p { margin: 0.3rem 0; }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--line);
+        margin: 2rem 0;
+      }
+
+      strong { font-weight: 600; }
+
+      .content {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        padding: 2rem 2.5rem;
+      }
+
+      @media (max-width: 600px) {
+        .content { padding: 1.2rem 1rem; }
+        h1 { font-size: 1.5rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <a href="/" class="back">← All Design Docs</a>
+      <div class="content">
+<h1
+id="design-fix-ao-send-message-enter-race-condition-issue-564">Design:
+Fix ao send message Enter race condition (Issue #564)</h1>
+<h2 id="problem-statement">Problem Statement</h2>
+<p><code>ao send &lt;session&gt; &lt;message&gt;</code> pastes the
+message text into the Claude Code interactive prompt but the Enter key
+doesn’t always register, leaving the message pasted but not submitted.
+The agent sits idle with the text visible in the input area.</p>
+<h3 id="steps-to-reproduce">Steps to Reproduce</h3>
+<ol type="1">
+<li><code>ao start</code> with <code>agent: claude-code</code> and
+<code>permissions: permissionless</code></li>
+<li><code>ao spawn</code> to create a session — agent launches,
+completes initial task, goes idle</li>
+<li><code>ao send &lt;session&gt; &lt;long multi-line message&gt;</code></li>
+<li>AO reports <code>Message sent and processing</code></li>
+<li>But the agent shows the pasted text in the input area without
+submitting it — the Enter key was not processed</li>
+</ol>
+<h3 id="root-cause-analysis">Root Cause Analysis</h3>
+<p>In <code>packages/plugins/runtime-tmux/src/index.ts</code>
+L147-150:</p>
+<pre class="ts"><code>// Small delay to let tmux process the pasted text before pressing Enter.
+// Without this, Enter can arrive before the text is fully rendered.
+await sleep(300);
+await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;Enter&quot;);</code></pre>
+<p>The 300ms delay may be insufficient for large multi-line pastes.
+Claude Code’s TUI (ink-based React renderer) needs time to: 1. Process
+the pasted text character by character 2. Update its internal state 3.
+Re-render the input field</p>
+<p>The delivery confirmation logic
+(<code>session-manager.ts:1635</code>) sees the output changed (pasted
+text appeared in the buffer) and reports success, even though the
+message was never actually submitted to the agent.</p>
+<h2 id="possible-approaches">Possible Approaches</h2>
+<h3 id="approach-1-increase-the-fixed-delay">Approach 1: Increase the
+Fixed Delay</h3>
+<p><strong>Description</strong>: Simply increase the 300ms delay to a
+larger value (e.g., 500ms, 1000ms, or even 2000ms).</p>
+<p><strong>Pros</strong>: - Simple implementation (one line change) - No
+complex logic</p>
+<p><strong>Cons</strong>: - Still a race condition - fundamentally
+doesn’t solve the problem - Makes all sends slower, even short messages
+- No guarantee it will work for all cases - Wastes time on messages that
+would have worked with 300ms</p>
+<p><strong>Risk</strong>: Low</p>
+<p><strong>Verdict</strong>: Not recommended. This is a band-aid, not a
+fix.</p>
+<hr />
+<h3 id="approach-2-adaptive-delay-based-on-message-size">Approach 2:
+Adaptive Delay Based on Message Size</h3>
+<p><strong>Description</strong>: Calculate delay based on message length
+(e.g., 100ms base + 2ms per character).</p>
+<pre class="ts"><code>const delayMs = Math.min(100 + message.length * 2, 2000);
+await sleep(delayMs);</code></pre>
+<p><strong>Pros</strong>: - Simple implementation - Scales with message
+size - Short messages still fast</p>
+<p><strong>Cons</strong>: - Still fundamentally a race condition -
+Heuristic - no guarantee it will work - Terminal/agent performance
+variations not accounted for</p>
+<p><strong>Risk</strong>: Low</p>
+<p><strong>Verdict</strong>: Better than fixed delay, but still a
+heuristic hack. Use as fallback only.</p>
+<hr />
+<h3 id="approach-3-verify-enter-was-processed-retry-loop">Approach 3:
+Verify Enter Was Processed (Retry Loop)</h3>
+<p><strong>Description</strong>: After sending Enter, capture the pane
+output and check if the pasted text is still in the input area. If it’s
+still there, retry sending Enter. Give up after N attempts with
+exponential backoff.</p>
+<p><strong>Pros</strong>: - Actually solves the problem by verifying
+success - Exponential backoff handles edge cases - Only retries when
+needed</p>
+<p><strong>Cons</strong>: - More complex implementation - Requires
+heuristics to detect if text is still in input (hard to distinguish from
+terminal echo) - Multiple capture-pane calls add overhead</p>
+<p><strong>Risk</strong>: Medium - detecting “message still in input” is
+tricky</p>
+<p><strong>Verdict</strong>: Good approach if we can reliably detect the
+failure state.</p>
+<hr />
+<h3 id="approach-4-bracketed-paste-mode">Approach 4: Bracketed Paste
+Mode</h3>
+<p><strong>Description</strong>: Wrap the paste in bracketed paste mode
+escape sequences (<code>\e[200~</code> before, <code>\e[201~</code>
+after). This tells the terminal that the paste is atomic, and the
+application should handle the paste as a single event.</p>
+<pre class="ts"><code>await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;C-u&quot;);
+await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;-l&quot;, &quot;\x1b[200~&quot;); // start bracketed paste
+// paste the message
+await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;-l&quot;, &quot;\x1b[201~&quot;); // end bracketed paste
+await sleep(300);
+await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;Enter&quot;);</code></pre>
+<p><strong>Pros</strong>: - Standard terminal protocol - Minimal code
+change - No additional delay needed (bracketed paste signals
+completion)</p>
+<p><strong>Cons</strong>: - Not all terminals support bracketed paste
+mode - Claude Code’s ink-based TUI may not honor bracketed paste - Still
+doesn’t verify Enter was processed</p>
+<p><strong>Risk</strong>: Medium - depends on Claude Code TUI
+support</p>
+<p><strong>Verdict</strong>: Good complementary approach, but not
+sufficient alone.</p>
+<hr />
+<h3 id="approach-5-bracketed-paste-adaptive-retry-recommended">Approach
+5: Bracketed Paste + Adaptive Retry (RECOMMENDED)</h3>
+<p><strong>Description</strong>: Combine bracketed paste mode with an
+adaptive retry mechanism:</p>
+<ol type="1">
+<li>Use bracketed paste mode to signal paste completion to the
+terminal</li>
+<li>Send Enter</li>
+<li>Capture the pane output</li>
+<li>Check if the message is still visible (incomplete submission)</li>
+<li>If still visible after 500ms, retry Enter</li>
+<li>Repeat up to 3 times with exponential backoff (500ms, 1000ms,
+2000ms)</li>
+</ol>
+<p><strong>Pros</strong>: - Multiple layers of protection - Bracketed
+paste reduces the chance of race condition - Retry loop catches the
+cases where it still fails - Exponential backoff handles slow
+terminals/agents - Only adds delay when needed</p>
+<p><strong>Cons</strong>: - Most complex implementation - Requires
+careful failure detection logic</p>
+<p><strong>Risk</strong>: Medium - complexity, but mitigated by using
+bracketed paste first</p>
+<p><strong>Verdict</strong>: <strong>RECOMMENDED</strong> - Best balance
+of reliability and complexity.</p>
+<hr />
+<h3 id="approach-6-type-message-character-by-character">Approach 6: Type
+Message Character by Character</h3>
+<p><strong>Description</strong>: Instead of pasting, type the message
+one character at a time with small delays between characters, simulating
+real typing.</p>
+<p><strong>Pros</strong>: - Eliminates paste-related race conditions -
+Very reliable</p>
+<p><strong>Cons</strong>: - Extremely slow for long messages (could take
+minutes) - Unacceptable user experience</p>
+<p><strong>Risk</strong>: High - terrible UX</p>
+<p><strong>Verdict</strong>: Not viable for production use.</p>
+<hr />
+<h2 id="comparison-table">Comparison Table</h2>
+<table>
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 21%" />
+<col style="width: 19%" />
+<col style="width: 21%" />
+<col style="width: 21%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Approach</th>
+<th>Reliability</th>
+<th>Complexity</th>
+<th>Performance</th>
+<th>Recommended</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1: Fixed Delay</td>
+<td>Low</td>
+<td>Very Low</td>
+<td>Slow</td>
+<td>No</td>
+</tr>
+<tr class="even">
+<td>2: Adaptive Delay</td>
+<td>Medium-Low</td>
+<td>Low</td>
+<td>Medium</td>
+<td>No</td>
+</tr>
+<tr class="odd">
+<td>3: Retry Loop</td>
+<td>High</td>
+<td>Medium</td>
+<td>Medium</td>
+<td>Maybe</td>
+</tr>
+<tr class="even">
+<td>4: Bracketed Paste</td>
+<td>Medium</td>
+<td>Low</td>
+<td>Fast</td>
+<td>No</td>
+</tr>
+<tr class="odd">
+<td><strong>5: Bracketed + Retry</strong></td>
+<td><strong>High</strong></td>
+<td><strong>Medium</strong></td>
+<td><strong>Fast</strong></td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td>6: Char-by-Char</td>
+<td>Very High</td>
+<td>High</td>
+<td>Very Slow</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h2 id="recommended-implementation-approach-5">Recommended
+Implementation: Approach 5</h2>
+<h3 id="why-this-approach">Why This Approach?</h3>
+<ol type="1">
+<li><strong>Bracketed paste</strong> reduces the likelihood of the race
+condition occurring</li>
+<li><strong>Retry with verification</strong> catches the edge cases
+where bracketed paste doesn’t help</li>
+<li><strong>Exponential backoff</strong> ensures we don’t hammer the
+system</li>
+<li><strong>Minimal delay in success cases</strong> - only adds overhead
+when retry is needed</li>
+</ol>
+<h3 id="implementation-details">Implementation Details</h3>
+<h4 id="bracketed-paste-integration">Bracketed Paste Integration</h4>
+<p>For <code>load-buffer + paste-buffer</code> path: - Send bracketed
+paste start sequence before paste - Send bracketed paste end sequence
+after paste - Keep the 300ms delay (as safety margin)</p>
+<p>For <code>send-keys -l</code> path: - Wrap the message in bracketed
+paste sequences</p>
+<h4 id="retry-logic">Retry Logic</h4>
+<pre><code>After sending Enter:
+1. Wait 500ms for terminal to process
+2. Capture pane output
+3. Check if message is still visible (heuristic: message text appears in last line of output)
+4. If visible:
+   - Retry Enter
+   - Increase wait time (exponential backoff)
+   - Repeat up to 3 times
+5. If still visible after 3 retries:
+   - Log warning but don&#39;t fail (best effort)</code></pre>
+<h4 id="detection-heuristic">Detection Heuristic</h4>
+<p>To detect if message is still in input area: - Capture the last N
+lines of output (e.g., 5 lines) - Check if the message or its last few
+lines are present - The message should NOT be visible if it was
+submitted (agent would have started processing)</p>
+<p><strong>Note</strong>: This is a best-effort heuristic. The important
+thing is that we retry Enter when we detect a likely failure. If we
+don’t detect it, the 3 retries with backoff provide additional
+safety.</p>
+<h3 id="pseudocode">Pseudocode</h3>
+<pre class="typescript"><code>async function sendMessage(handle: RuntimeHandle, message: string): Promise&lt;void&gt; {
+  const MAX_RETRIES = 3;
+  const BASE_DELAY_MS = 500;
+
+  // Clear input
+  await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;C-u&quot;);
+
+  // Send bracketed paste start
+  await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;-l&quot;, &quot;\x1b[200~&quot;);
+
+  // Paste message (existing logic for long/short messages)
+  if (message.includes(&quot;\n&quot;) || message.length &gt; 200) {
+    // use load-buffer + paste-buffer
+    ...
+  } else {
+    await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;-l&quot;, message);
+  }
+
+  // Send bracketed paste end
+  await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;-l&quot;, &quot;\x1b[201~&quot;);
+
+  // Retry Enter with verification
+  for (let attempt = 0; attempt &lt; MAX_RETRIES; attempt++) {
+    await sleep(BASE_DELAY_MS * Math.pow(2, attempt));
+    await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;Enter&quot;);
+
+    // Check if message was submitted (skip on last attempt)
+    if (attempt &lt; MAX_RETRIES - 1) {
+      await sleep(200); // Brief wait for output to settle
+      const output = await tmux(&quot;capture-pane&quot;, &quot;-t&quot;, handle.id, &quot;-p&quot;, &quot;-S&quot;, &quot;-5&quot;);
+      if (!messageStillInOutput(message, output)) {
+        // Message was submitted, done
+        break;
+      }
+    }
+  }
+}
+
+function messageStillInOutput(message: string, output: string): boolean {
+  // Heuristic: check if the last line of the message is in the output
+  const lastLines = message.split(&#39;\n&#39;).slice(-3).join(&#39;\n&#39;);
+  return output.includes(lastLines) &amp;&amp; !output.includes(&quot;Claude&quot;); // Exclude cases where agent started
+}</code></pre>
+<h3 id="testing-strategy">Testing Strategy</h3>
+<ol type="1">
+<li>Unit tests for the retry logic</li>
+<li>Integration tests with mock tmux that simulates slow terminals</li>
+<li>Manual testing with real Claude Code sessions</li>
+</ol>
+<h3 id="migration-notes">Migration Notes</h3>
+<ul>
+<li>No breaking changes</li>
+<li>Existing behavior preserved for simple cases</li>
+<li>Only adds retry logic when needed</li>
+</ul>
+<h2 id="conclusion">Conclusion</h2>
+<p>Approach 5 (Bracketed Paste + Adaptive Retry) provides the best
+balance of reliability, complexity, and performance. It addresses the
+root cause (race condition) at multiple levels while maintaining good
+performance for successful cases.</p>
+      </div>
+    </main>
+  </body>
+</html>

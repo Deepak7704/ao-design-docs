@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inline JavaScript Parser for Metadata
+Hook — Agent Orchestrator Design</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f2efe7;
+        --panel: #fffdf8;
+        --ink: #1f1a16;
+        --muted: #6f6357;
+        --brand: #165a72;
+        --line: #dfd3c2;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        color: var(--ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        line-height: 1.65;
+        background:
+          radial-gradient(circle at 12% 10%, #ebdfcb 0%, transparent 35%),
+          radial-gradient(circle at 88% 85%, #e5d4ba 0%, transparent 30%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .back {
+        display: inline-block;
+        margin-bottom: 1.5rem;
+        color: var(--brand);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      .back:hover { text-decoration: underline; }
+
+      h1, h2, h3, h4 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      h1 {
+        font-size: 2rem;
+        line-height: 1.25;
+        margin-bottom: 0.3rem;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h2 {
+        font-size: 1.45rem;
+        margin-top: 2.5rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h3 {
+        font-size: 1.15rem;
+        margin-top: 1.8rem;
+        margin-bottom: 0.4rem;
+      }
+
+      h4 {
+        font-size: 1rem;
+        margin-top: 1.4rem;
+        margin-bottom: 0.3rem;
+      }
+
+      p { margin: 0.7rem 0; }
+
+      ul, ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      li { margin-bottom: 0.25rem; }
+
+      a { color: var(--brand); }
+
+      code {
+        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+        background: #f3ebe0;
+        border-radius: 4px;
+        padding: 0.12rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      pre {
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #faf4ec;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.85em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--line);
+      }
+
+      th {
+        background: #f3ebe0;
+        font-weight: 600;
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      tr:nth-child(even) td { background: #fdfbf7; }
+
+      blockquote {
+        margin: 1rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--brand);
+        background: var(--panel);
+        border-radius: 0 10px 10px 0;
+        color: var(--muted);
+      }
+
+      blockquote p { margin: 0.3rem 0; }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--line);
+        margin: 2rem 0;
+      }
+
+      strong { font-weight: 600; }
+
+      .content {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        padding: 2rem 2.5rem;
+      }
+
+      @media (max-width: 600px) {
+        .content { padding: 1.2rem 1rem; }
+        h1 { font-size: 1.5rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <a href="/" class="back">← All Design Docs</a>
+      <div class="content">
+<h1 id="inline-javascript-parser-for-metadata-hook">Inline JavaScript
+Parser for Metadata Hook</h1>
+<h2 id="problem-statement">Problem Statement</h2>
+<p>The PostToolUse hook (<code>metadata-updater.sh</code>) uses regex
+patterns to detect GitHub and Git commands such as
+<code>gh pr create</code>, <code>git checkout -b</code>, etc. This
+approach fails when commands are prefixed with directory change
+operations:</p>
+<pre class="bash"><code>cd /path/to/repo &amp;&amp; gh pr create --title &quot;My PR&quot;
+cd ~/.worktrees/project; git checkout -b feature-branch</code></pre>
+<p>The regex <code>^gh[[:space:]]+pr[[:space:]]+create</code> only
+matches commands starting at the beginning of the string, so it doesn’t
+detect these patterns.</p>
+<h2 id="solution-inline-javascript-parser">Solution: Inline JavaScript
+Parser</h2>
+<p>Replace regex-based command detection with an inline JavaScript
+parser embedded in the bash script. This approach provides:</p>
+<ol type="1">
+<li><strong>Accurate command detection</strong> - handles
+<code>&amp;&amp;</code>, <code>;</code>, and <code>||</code> command
+chaining</li>
+<li><strong>No external dependencies</strong> - parser is
+self-contained</li>
+<li><strong>No file copying</strong> - everything is in the bash script
+itself</li>
+<li><strong>Maintainable</strong> - structured JavaScript code instead
+of complex regex</li>
+</ol>
+<h2 id="architecture">Architecture</h2>
+<h3 id="components">Components</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────────┐
+│                    PostToolUse Hook                              │
+│                   (metadata-updater.sh)                          │
+│                                                                │
+│  1. Receives: tool_name, command, output, exit_code            │
+│  2. Validates: Bash tool, exit_code=0, AO_SESSION set        │
+└────────────────────┬────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│           Inline JavaScript Parser (node -e)                      │
+│                                                                │
+│  Parses shell commands via simple tokenizer:                       │
+│  - &amp;&amp;, ;, || (command chaining)                               │
+│  - &quot; and &#39; and \` (quotes)                                      │
+│  - \\ (escapes)                                                  │
+│                                                                │
+│  Extracts: PR URLs, branch names, merge actions                    │
+│                                                                │
+│  Outputs: TYPE:value                                              │
+│    - PR_CREATE:https://github.com/.../pull/123                   │
+│    - BRANCH:feature-branch                                        │
+│    - MERGE:                                                       │
+│    - NONE                                                         │
+└────────────────────┬────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│              Metadata Update Actions                               │
+│                                                                │
+│  - PR_CREATE: updates &quot;pr&quot; and &quot;status=pr_open&quot;                │
+│  - BRANCH: updates &quot;branch&quot;                                    │
+│  - MERGE: updates &quot;status=merged&quot;                               │
+└─────────────────────────────────────────────────────────────────────┘</code></pre>
+<h3 id="file-structure">File Structure</h3>
+<pre><code>packages/plugins/agent-claude-code/
+├── src/
+│   ├── index.ts                    # Hook setup &amp; script template with inline parser
+│   └── index.test.ts               # Tests for hook script
+├── dist/
+│   └── index.js
+└── package.json</code></pre>
+<p>No separate parser file is needed - everything is inline.</p>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="shell-command-tokenizer">Shell Command Tokenizer</h3>
+<p>The inline JavaScript parser implements a simple shell tokenizer:</p>
+<pre class="javascript"><code>function parseCommands(str) {
+  const commands = [];
+  let current = &quot;&quot;;
+  let inQuote = false;
+  let quoteChar = &quot;&quot;;
+  let i = 0;
+
+  while (i &lt; str.length) {
+    const c = str[i];
+
+    if (inQuote) {
+      if (c === quoteChar &amp;&amp; (i === 0 || str[i - 1] !== &quot;\\&quot;)) {
+        inQuote = false;
+      }
+      current += c;
+    } else if (c === &#39;&quot;&#39; || c === &quot;&#39;&quot; || c === &quot;`&quot;) {
+      inQuote = true;
+      quoteChar = c;
+      current += c;
+    } else if (c === &quot;\\&quot;) {
+      current += c + (str[i + 1] || &quot;&quot;);
+      i++;
+    } else if (c === &quot;&amp;&quot; &amp;&amp; i + 1 &lt; str.length &amp;&amp; str[i + 1] === &quot;&amp;&quot;) {
+      if (current.trim()) commands.push(current.trim());
+      current = &quot;&quot;;
+      i++;
+    } else if (c === &quot;;&quot; || c === &quot;|&quot; || c === &quot;||&quot;) {
+      if (current.trim()) commands.push(current.trim());
+      current = &quot;&quot;;
+    } else {
+      current += c;
+    }
+    i++;
+  }
+
+  if (current.trim()) commands.push(current.trim());
+  return commands.map(cmd =&gt; cmd.split(/\s+/).filter(Boolean));
+}</code></pre>
+<p>This correctly handles: -
+<code>cd /path &amp;&amp; gh pr create</code> → 2 separate commands -
+<code>cd /path; gh pr create</code> → 2 separate commands -
+<code>gh pr create &amp;</code> → 1 command (background)</p>
+<h3 id="command-matching">Command Matching</h3>
+<p>The <code>matchCommand()</code> function matches command
+patterns:</p>
+<pre class="javascript"><code>function matchCommand(words, output) {
+  if (words.length === 0) return null;
+  const [cmd, arg1, arg2, arg3] = words;
+
+  if (cmd === &quot;gh&quot; &amp;&amp; arg1 === &quot;pr&quot; &amp;&amp; arg2 === &quot;create&quot;) {
+    const prUrl = extractPRUrl(output);
+    return prUrl ? `PR_CREATE:${prUrl}` : &quot;NONE&quot;;
+  }
+
+  if (cmd === &quot;gh&quot; &amp;&amp; arg1 === &quot;pr&quot; &amp;&amp; arg2 === &quot;merge&quot;) {
+    return &quot;MERGE:&quot;;
+  }
+
+  if (cmd === &quot;git&quot; &amp;&amp; arg1 === &quot;checkout&quot; &amp;&amp; arg2 === &quot;-b&quot;) {
+    return `BRANCH:${arg3}`;
+  }
+
+  // ... more patterns
+}</code></pre>
+<h2 id="comparison-regex-vs-inline-parser">Comparison: Regex vs Inline
+Parser</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Aspect</th>
+<th>Regex Approach</th>
+<th>Inline Parser</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>cd /path &amp;&amp; gh pr create</code></td>
+<td>❌ Fails</td>
+<td>✅ Works</td>
+</tr>
+<tr class="even">
+<td><code>cd /path; gh pr create</code></td>
+<td>❌ Fails</td>
+<td>✅ Works</td>
+</tr>
+<tr class="odd">
+<td><code>gh pr create &amp;</code></td>
+<td>⚠️ May work</td>
+<td>✅ Works</td>
+</tr>
+<tr class="even">
+<td>Paths with special chars</td>
+<td>⚠️ May break</td>
+<td>✅ Safe</td>
+</tr>
+<tr class="odd">
+<td>Dependencies</td>
+<td>None</td>
+<td>None (inline)</td>
+</tr>
+<tr class="even">
+<td>File copying</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr class="odd">
+<td>Maintainability</td>
+<td>Low (complex regex)</td>
+<td>High (structured code)</td>
+</tr>
+<tr class="even">
+<td>Extensibility</td>
+<td>Low (add new regex)</td>
+<td>High (add new pattern)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="deployment">Deployment</h2>
+<ol type="1">
+<li><strong>Build</strong>: TypeScript compiles <code>index.ts</code> →
+<code>dist/index.js</code></li>
+<li><strong>Setup</strong>: <code>setupHookInWorkspace()</code> writes
+the script to <code>.claude/metadata-updater.sh</code></li>
+<li><strong>Runtime</strong>: Hook script invokes parser via
+<code>node -e</code> with inline JavaScript</li>
+</ol>
+<h2 id="trade-offs">Trade-offs</h2>
+<h3 id="pros">Pros</h3>
+<ul>
+<li>Robust command detection for common shell chaining patterns</li>
+<li>No external dependencies to manage or copy</li>
+<li>Self-contained - everything in one bash script</li>
+<li>Easy to debug and extend</li>
+</ul>
+<h3 id="cons">Cons</h3>
+<ul>
+<li>Simplified tokenizer (doesn’t handle all shell edge cases like
+subshells, pipelines)</li>
+<li>Still relies on Node.js at runtime (already available in AO
+environment)</li>
+</ul>
+<h2 id="references">References</h2>
+<ul>
+<li>Issue: #324</li>
+<li>PR: https://github.com/ComposioHQ/agent-orchestrator/pull/609</li>
+</ul>
+      </div>
+    </main>
+  </body>
+</html>

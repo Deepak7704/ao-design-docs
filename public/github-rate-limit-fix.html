@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitHub Rate Limit Fix — Agent Orchestrator Design</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f2efe7;
+        --panel: #fffdf8;
+        --ink: #1f1a16;
+        --muted: #6f6357;
+        --brand: #165a72;
+        --line: #dfd3c2;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        color: var(--ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        line-height: 1.65;
+        background:
+          radial-gradient(circle at 12% 10%, #ebdfcb 0%, transparent 35%),
+          radial-gradient(circle at 88% 85%, #e5d4ba 0%, transparent 30%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .back {
+        display: inline-block;
+        margin-bottom: 1.5rem;
+        color: var(--brand);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      .back:hover { text-decoration: underline; }
+
+      h1, h2, h3, h4 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      h1 {
+        font-size: 2rem;
+        line-height: 1.25;
+        margin-bottom: 0.3rem;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h2 {
+        font-size: 1.45rem;
+        margin-top: 2.5rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h3 {
+        font-size: 1.15rem;
+        margin-top: 1.8rem;
+        margin-bottom: 0.4rem;
+      }
+
+      h4 {
+        font-size: 1rem;
+        margin-top: 1.4rem;
+        margin-bottom: 0.3rem;
+      }
+
+      p { margin: 0.7rem 0; }
+
+      ul, ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      li { margin-bottom: 0.25rem; }
+
+      a { color: var(--brand); }
+
+      code {
+        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+        background: #f3ebe0;
+        border-radius: 4px;
+        padding: 0.12rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      pre {
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #faf4ec;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.85em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--line);
+      }
+
+      th {
+        background: #f3ebe0;
+        font-weight: 600;
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      tr:nth-child(even) td { background: #fdfbf7; }
+
+      blockquote {
+        margin: 1rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--brand);
+        background: var(--panel);
+        border-radius: 0 10px 10px 0;
+        color: var(--muted);
+      }
+
+      blockquote p { margin: 0.3rem 0; }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--line);
+        margin: 2rem 0;
+      }
+
+      strong { font-weight: 600; }
+
+      .content {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        padding: 2rem 2.5rem;
+      }
+
+      @media (max-width: 600px) {
+        .content { padding: 1.2rem 1rem; }
+        h1 { font-size: 1.5rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <a href="/" class="back">← All Design Docs</a>
+      <div class="content">
+<h1 id="github-rate-limit-fix">GitHub Rate Limit Fix</h1>
+<p><strong>Date:</strong> March 22, 2026</p>
+<hr />
+<h2 id="problem">Problem</h2>
+<ul>
+<li>2,000-4,000 API calls/hour (40-80% of GitHub’s 5,000/hour
+limit)</li>
+<li>Concurrent agents make duplicate calls for same PR</li>
+<li><code>enrichSessionPR</code> triggers 6-7 API calls per PR</li>
+<li><code>getCISummary()</code> internally calls
+<code>getCIChecks()</code> (duplicate)</li>
+</ul>
+<hr />
+<h2 id="solution">Solution</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Approach</th>
+<th>Mechanism</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Deduplication</strong></td>
+<td>Share concurrent identical requests</td>
+<td>~15-20%</td>
+</tr>
+<tr class="even">
+<td><strong>Batching</strong></td>
+<td>Combine multiple gh calls into one</td>
+<td>~30-40%</td>
+</tr>
+<tr class="odd">
+<td><strong>Total</strong></td>
+<td>Both approaches</td>
+<td><strong>~60%</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why not caching?</strong> No invalidation logic, no staleness
+concerns, simpler implementation.</p>
+<hr />
+<h2 id="implementation">Implementation</h2>
+<h3 id="step-1-create-deduplication-module">Step 1: Create Deduplication
+Module</h3>
+<p><strong>New file:</strong>
+<code>packages/plugins/scm-github/src/dedupe.ts</code></p>
+<pre class="typescript"><code>export class RequestDeduplicator {
+  private pendingRequests = new Map&lt;string, Promise&lt;unknown&gt;&gt;();
+
+  async dedupe&lt;T&gt;(key: string, fn: () =&gt; Promise&lt;T&gt;): Promise&lt;T&gt; {
+    const existing = this.pendingRequests.get(key);
+    if (existing) return existing as Promise&lt;T&gt;;
+
+    const promise = fn().finally(() =&gt; this.pendingRequests.delete(key));
+    this.pendingRequests.set(key, promise);
+    return promise;
+  }
+}
+
+export const ghDeduplicator = new RequestDeduplicator();</code></pre>
+<h3 id="step-2-add-wrapper-batching">Step 2: Add Wrapper &amp;
+Batching</h3>
+<p><strong>File:</strong>
+<code>packages/plugins/scm-github/src/index.ts</code></p>
+<pre class="typescript"><code>import { ghDeduplicator } from &quot;./dedupe&quot;;
+
+async function dedupeGh(args: string[]): Promise&lt;string&gt; {
+  const key = `gh:${args.join(&quot;:&quot;)}`;
+  return ghDeduplicator.dedupe(key, async () =&gt; gh(args));
+}
+
+// Batch PR view - fetch all fields in one call
+const prViewDataCache = new WeakMap&lt;PRInfo, any&gt;();
+
+async function getBatchedPRData(pr: PRInfo) {
+  const cached = prViewDataCache.get(pr);
+  if (cached) return cached;
+
+  const raw = await dedupeGh([
+    &quot;pr&quot;, &quot;view&quot;, String(pr.number), &quot;--repo&quot;, repoFlag(pr),
+    &quot;--json&quot;, &quot;state,title,additions,deletions,reviewDecision,reviews,mergeable,mergeStateStatus,isDraft&quot;
+  ]);
+
+  const data = JSON.parse(raw);
+  prViewDataCache.set(pr, data);
+  return data;
+}</code></pre>
+<h3 id="step-3-refactor-methods">Step 3: Refactor Methods</h3>
+<pre class="typescript"><code>async getPRSummary(pr: PRInfo) {
+  const data = await getBatchedPRData(pr);  // No direct gh call
+  return { state: parseState(data.state), title: data.title, ... };
+}
+
+async getReviewDecision(pr: PRInfo) {
+  const data = await getBatchedPRData(pr);  // No direct gh call
+  return parseReviewDecision(data.reviewDecision);
+}
+
+async getCIChecks(pr: PRInfo) {
+  const raw = await dedupeGh([...]);  // Deduped
+  return parseChecks(raw);
+}
+
+async getCISummary(pr: PRInfo, checks?: CICheck[]) {
+  const ciChecks = checks ?? await this.getCIChecks(pr);  // Accept optional to avoid duplicate
+  return parseCISummary(ciChecks);
+}</code></pre>
+<h3 id="step-4-replace-gh-with-dedupegh">Step 4: Replace gh() with
+dedupeGh()</h3>
+<p>Replace all <code>gh([...])</code> with <code>dedupeGh([...])</code>
+in: - <code>getCIChecks()</code> - <code>getPendingComments()</code> -
+<code>getAutomatedComments()</code></p>
+<hr />
+<h2 id="files-changed">Files Changed</h2>
+<table>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/plugins/scm-github/src/dedupe.ts</code></td>
+<td>New (30 lines)</td>
+</tr>
+<tr class="even">
+<td><code>packages/plugins/scm-github/src/index.ts</code></td>
+<td>Refactor (150 lines)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="expected-impact">Expected Impact</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>API calls per PR enrichment</td>
+<td>6-7</td>
+<td>~3</td>
+</tr>
+<tr class="even">
+<td>5 concurrent agents, same PR</td>
+<td>20 calls</td>
+<td>~4 calls</td>
+</tr>
+<tr class="odd">
+<td>Total calls/hour</td>
+<td>2,000-4,000</td>
+<td>~800-1,600</td>
+</tr>
+<tr class="even">
+<td><strong>Reduction</strong></td>
+<td>-</td>
+<td><strong>~60%</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="summary">Summary</h2>
+<ul>
+<li><strong>Approach:</strong> Deduplication + Batching (no
+caching)</li>
+<li><strong>Complexity:</strong> Low (no state to manage, no
+invalidation)</li>
+<li><strong>Impact:</strong> ~60% reduction, stays under GitHub rate
+limit</li>
+<li><strong>Timeline:</strong> 1-2 days to implement and test</li>
+</ul>
+      </div>
+    </main>
+  </body>
+</html>
