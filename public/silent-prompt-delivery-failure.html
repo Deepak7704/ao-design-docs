@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deep Dive: Silent Prompt Delivery Failure
+(#718) — Agent Orchestrator Design</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f2efe7;
+        --panel: #fffdf8;
+        --ink: #1f1a16;
+        --muted: #6f6357;
+        --brand: #165a72;
+        --line: #dfd3c2;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        color: var(--ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        line-height: 1.65;
+        background:
+          radial-gradient(circle at 12% 10%, #ebdfcb 0%, transparent 35%),
+          radial-gradient(circle at 88% 85%, #e5d4ba 0%, transparent 30%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .back {
+        display: inline-block;
+        margin-bottom: 1.5rem;
+        color: var(--brand);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      .back:hover { text-decoration: underline; }
+
+      h1, h2, h3, h4 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      h1 {
+        font-size: 2rem;
+        line-height: 1.25;
+        margin-bottom: 0.3rem;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h2 {
+        font-size: 1.45rem;
+        margin-top: 2.5rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h3 {
+        font-size: 1.15rem;
+        margin-top: 1.8rem;
+        margin-bottom: 0.4rem;
+      }
+
+      h4 {
+        font-size: 1rem;
+        margin-top: 1.4rem;
+        margin-bottom: 0.3rem;
+      }
+
+      p { margin: 0.7rem 0; }
+
+      ul, ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      li { margin-bottom: 0.25rem; }
+
+      a { color: var(--brand); }
+
+      code {
+        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+        background: #f3ebe0;
+        border-radius: 4px;
+        padding: 0.12rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      pre {
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #faf4ec;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.85em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--line);
+      }
+
+      th {
+        background: #f3ebe0;
+        font-weight: 600;
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      tr:nth-child(even) td { background: #fdfbf7; }
+
+      blockquote {
+        margin: 1rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--brand);
+        background: var(--panel);
+        border-radius: 0 10px 10px 0;
+        color: var(--muted);
+      }
+
+      blockquote p { margin: 0.3rem 0; }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--line);
+        margin: 2rem 0;
+      }
+
+      strong { font-weight: 600; }
+
+      .content {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        padding: 2rem 2.5rem;
+      }
+
+      @media (max-width: 600px) {
+        .content { padding: 1.2rem 1rem; }
+        h1 { font-size: 1.5rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <a href="/" class="back">← All Design Docs</a>
+      <div class="content">
+<h1 id="deep-dive-silent-prompt-delivery-failure-718">Deep Dive: Silent
+Prompt Delivery Failure (#718)</h1>
+<p><strong>Date:</strong> March 31, 2026 <strong>Author:</strong> Deepak
+Veluvolu <strong>Issue:</strong> <a
+href="https://github.com/ComposioHQ/agent-orchestrator/issues/718">ComposioHQ/agent-orchestrator#718</a></p>
+<hr />
+<h2 id="the-problem">The Problem</h2>
+<p>When AO spawns a worker session (e.g. <code>ao spawn #715</code>),
+the session is created successfully — worktree, branch, tmux session,
+Claude Code — all launch fine. But then <strong>nothing
+happens.</strong> The agent sits at an empty prompt doing zero work.
+Nobody is notified.</p>
+<p>This is the worst kind of bug: <strong>silent success.</strong> The
+system reports everything worked, but the critical step — delivering the
+task prompt to the agent — failed in the dark.</p>
+<hr />
+<h2 id="the-failure-chain">The Failure Chain</h2>
+<h3 id="step-by-step-what-happens-during-ao-spawn">Step-by-step: what
+happens during <code>ao spawn</code></h3>
+<pre><code>1. spawn() called
+   ├── Validate project, resolve plugins
+   ├── Fetch issue from tracker (GitHub)
+   ├── Create workspace (git worktree)
+   ├── Build prompt (base instructions + issue context)
+   ├── Get agent launch command
+   ├── Create runtime (tmux session)          ← tmux session now exists
+   ├── Write metadata (status: &quot;spawning&quot;)
+   ├── Run postLaunchSetup()
+   │
+   └── 🔴 POST-LAUNCH PROMPT DELIVERY
+       ├── sleep(5000)                         ← fixed 5-second wait
+       ├── runtime.sendMessage(handle, prompt) ← THIS FAILS SILENTLY
+       └── catch {}                            ← error swallowed, no log</code></pre>
+<h3 id="the-exact-code-session-manager.ts-line-580">The exact code
+(session-manager.ts, ~line 580)</h3>
+<pre class="typescript"><code>// Send initial prompt post-launch for agents that need it (e.g. Claude Code
+// exits after -p, so we send the prompt after it starts in interactive mode).
+// This is intentionally outside the try/catch above — a prompt delivery failure
+// should NOT destroy the session. The agent is running; user can retry with
+// `ao send`.
+if (plugins.agent.promptDelivery === &quot;post-launch&quot; &amp;&amp; agentLaunchConfig.prompt) {
+  try {
+    // Wait for agent to start and be ready for input
+    await new Promise((resolve) =&gt; setTimeout(resolve, 5_000));
+    await plugins.runtime.sendMessage(handle, agentLaunchConfig.prompt);
+  } catch {
+    // Non-fatal: agent is running but didn&#39;t receive the initial prompt.
+    // User can retry with `ao send`.
+  }
+}</code></pre>
+<h3 id="why-sendmessage-fails">Why sendMessage fails</h3>
+<p>The <code>sendMessage</code> in
+<code>runtime-tmux/src/index.ts</code> does this:</p>
+<pre class="typescript"><code>async sendMessage(handle, message) {
+  await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;C-u&quot;);      // Clear input
+
+  // For long/multiline messages:
+  const tmpPath = join(tmpdir(), `ao-send-${randomUUID()}.txt`);
+  writeFileSync(tmpPath, message);
+  await tmux(&quot;load-buffer&quot;, &quot;-b&quot;, bufferName, tmpPath);   // Load into tmux buffer
+  await tmux(&quot;paste-buffer&quot;, &quot;-b&quot;, bufferName, &quot;-t&quot;, handle.id, &quot;-d&quot;); // Paste
+
+  await sleep(300);                                        // 300ms wait
+  await tmux(&quot;send-keys&quot;, &quot;-t&quot;, handle.id, &quot;Enter&quot;);      // Submit
+}</code></pre>
+<p>Failure modes:</p>
+<ol type="1">
+<li><strong>Claude Code not ready after 5s</strong> — the TUI hasn’t
+finished rendering. <code>send-keys C-u</code> or
+<code>paste-buffer</code> hits a pane that isn’t accepting input
+yet</li>
+<li><strong>tmux pane not in expected state</strong> — Claude Code is
+showing a startup banner, terms prompt, or permissions prompt</li>
+<li><strong>paste-buffer race</strong> — the text is pasted but the
+300ms delay before Enter isn’t enough for Claude Code’s ink-based React
+renderer to process it (this is the same root cause as #564/PR
+#571)</li>
+<li><strong>tmux server instability</strong> — tmux commands fail
+transiently under load</li>
+</ol>
+<h3 id="what-happens-after-failure">What happens after failure</h3>
+<pre><code>spawn() returns Session { status: &quot;spawning&quot; }  ← looks successful
+                    ↓
+Lifecycle manager polls (every 30s)
+                    ↓
+determineStatus() checks agent activity
+  → agent.getActivityState() returns &quot;waiting_input&quot; or &quot;idle&quot;
+                    ↓
+Status transitions: spawning → needs_input
+                    ↓
+Event &quot;session.needs_input&quot; emitted
+  → reaction &quot;agent-needs-input&quot; fires (if configured)
+  → BUT: default config doesn&#39;t auto-retry prompt delivery
+                    ↓
+Session sits at needs_input forever until human notices</code></pre>
+<p>The lifecycle manager <strong>does</strong> detect the idle agent,
+but it interprets it as “agent finished and is waiting for more work” —
+not “agent never received its first task.”</p>
+<hr />
+<h2 id="five-approaches-to-fix-this">Five Approaches to Fix This</h2>
+<h3 id="approach-1-log-and-notify-minimal-fix">Approach 1: Log and
+Notify (Minimal Fix)</h3>
+<p><strong>Change:</strong> Replace bare <code>catch {}</code> with
+logging + notification.</p>
+<pre class="typescript"><code>if (plugins.agent.promptDelivery === &quot;post-launch&quot; &amp;&amp; agentLaunchConfig.prompt) {
+  try {
+    await new Promise((resolve) =&gt; setTimeout(resolve, 5_000));
+    await plugins.runtime.sendMessage(handle, agentLaunchConfig.prompt);
+    session.metadata[&quot;promptDelivered&quot;] = &quot;true&quot;;
+    updateMetadata(sessionsDir, sessionId, { promptDelivered: &quot;true&quot; });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[spawn] Prompt delivery failed for ${sessionId}: ${msg}`);
+    session.metadata[&quot;promptDelivered&quot;] = &quot;false&quot;;
+    updateMetadata(sessionsDir, sessionId, { promptDelivered: &quot;false&quot; });
+  }
+}</code></pre>
+<p><strong>Pros:</strong> - Minimal code change (~10 lines) - Doesn’t
+change system behavior - Gives operators visibility</p>
+<p><strong>Cons:</strong> - Still fails — just tells you about it - User
+must manually <code>ao send</code> to recover - No automation</p>
+<p><strong>Verdict:</strong> Necessary but insufficient. This should be
+part of any fix.</p>
+<hr />
+<h3 id="approach-2-retry-with-fixed-backoff">Approach 2: Retry with
+Fixed Backoff</h3>
+<p><strong>Change:</strong> Retry prompt delivery up to 3 times with
+increasing delays.</p>
+<pre class="typescript"><code>async function deliverPromptWithRetry(
+  runtime: Runtime,
+  handle: RuntimeHandle,
+  prompt: string,
+  opts = { maxRetries: 3, baseDelayMs: 5_000, backoffMs: 3_000 }
+): Promise&lt;boolean&gt; {
+  for (let attempt = 0; attempt &lt; opts.maxRetries; attempt++) {
+    try {
+      const delay = opts.baseDelayMs + attempt * opts.backoffMs;
+      await sleep(delay);
+      await runtime.sendMessage(handle, prompt);
+      return true;
+    } catch (err) {
+      console.warn(`[spawn] Prompt delivery attempt ${attempt + 1}/${opts.maxRetries} failed for session: ${err}`);
+    }
+  }
+  return false;
+}</code></pre>
+<p><strong>Timeline:</strong> 5s → try → 8s → try → 11s → try → give up
+(~24s total)</p>
+<p><strong>Pros:</strong> - Handles transient tmux failures - Handles
+slow agent startup (up to ~19s total wait) - Simple, predictable
+behavior - No new dependencies</p>
+<p><strong>Cons:</strong> - Fixed delays are a guess — some agents need
+5s, some need 30s - Blocks the spawn() return for up to 24 seconds -
+Doesn’t verify the agent actually received the prompt - The root cause
+(agent not ready) isn’t addressed, just worked around</p>
+<p><strong>Verdict:</strong> Good pragmatic fix. Solves most cases but
+not all.</p>
+<hr />
+<h3 id="approach-3-poll-based-ready-detection">Approach 3: Poll-Based
+Ready Detection</h3>
+<p><strong>Change:</strong> Instead of fixed delays, poll the agent’s
+output to detect when it’s ready for input before sending the
+prompt.</p>
+<pre class="typescript"><code>async function waitForAgentReady(
+  runtime: Runtime,
+  agent: Agent,
+  handle: RuntimeHandle,
+  timeoutMs = 30_000,
+  pollIntervalMs = 1_000,
+): Promise&lt;boolean&gt; {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() &lt; deadline) {
+    try {
+      const output = await runtime.getOutput(handle, 10);
+      const activity = agent.detectActivity(output);
+
+      // Agent is showing its input prompt — ready for text
+      if (activity === &quot;waiting_input&quot; || activity === &quot;idle&quot;) {
+        return true;
+      }
+    } catch {
+      // tmux not ready yet — keep trying
+    }
+    await sleep(pollIntervalMs);
+  }
+
+  return false;
+}
+
+// Usage in spawn():
+if (plugins.agent.promptDelivery === &quot;post-launch&quot; &amp;&amp; agentLaunchConfig.prompt) {
+  const ready = await waitForAgentReady(
+    plugins.runtime, plugins.agent, handle, 30_000
+  );
+
+  if (ready) {
+    try {
+      await plugins.runtime.sendMessage(handle, agentLaunchConfig.prompt);
+      updateMetadata(sessionsDir, sessionId, { promptDelivered: &quot;true&quot; });
+    } catch {
+      updateMetadata(sessionsDir, sessionId, { promptDelivered: &quot;false&quot; });
+    }
+  } else {
+    updateMetadata(sessionsDir, sessionId, { promptDelivered: &quot;false&quot; });
+  }
+}</code></pre>
+<p><strong>Pros:</strong> - Adapts to actual agent startup time (no
+guessing) - Works for slow startups (up to 30s) - Confirms agent is
+actually ready before sending - No wasted time — sends as soon as agent
+is ready</p>
+<p><strong>Cons:</strong> - Adds up to 30s to spawn time in worst case -
+<code>detectActivity</code> must work for fresh Claude Code sessions
+(may not — the initial prompt screen looks different from the idle
+prompt) - Couples session-manager to agent activity detection logic -
+More complex, more code to maintain</p>
+<p><strong>Verdict:</strong> More reliable than Approach 2, but adds
+complexity and may still fail if activity detection doesn’t recognize
+the initial state.</p>
+<hr />
+<h3 id="approach-4-async-delivery-via-lifecycle-manager">Approach 4:
+Async Delivery via Lifecycle Manager</h3>
+<p><strong>Change:</strong> Don’t deliver the prompt during spawn at
+all. Instead, store it in metadata and let the lifecycle manager deliver
+it on the first poll.</p>
+<pre class="typescript"><code>// In spawn() — just store the prompt, don&#39;t deliver it
+if (plugins.agent.promptDelivery === &quot;post-launch&quot; &amp;&amp; agentLaunchConfig.prompt) {
+  updateMetadata(sessionsDir, sessionId, {
+    pendingPrompt: agentLaunchConfig.prompt,
+    promptDelivered: &quot;false&quot;,
+  });
+}
+
+// In lifecycle-manager determineStatus() or a new deliverPendingPrompts() step:
+async function deliverPendingPrompts(sessions: Session[]): Promise&lt;void&gt; {
+  for (const session of sessions) {
+    const pending = session.metadata[&quot;pendingPrompt&quot;];
+    if (!pending || session.metadata[&quot;promptDelivered&quot;] === &quot;true&quot;) continue;
+
+    // Only deliver if agent is detected as waiting for input
+    const agent = registry.get&lt;Agent&gt;(&quot;agent&quot;, ...);
+    const activityState = await agent.getActivityState(session, config.readyThresholdMs);
+
+    if (activityState?.state === &quot;waiting_input&quot; || activityState?.state === &quot;idle&quot;) {
+      const runtime = registry.get&lt;Runtime&gt;(&quot;runtime&quot;, ...);
+      try {
+        await runtime.sendMessage(session.runtimeHandle, pending);
+        updateMetadata(sessionsDir, session.id, {
+          promptDelivered: &quot;true&quot;,
+          pendingPrompt: &quot;&quot;, // clear
+        });
+      } catch {
+        // Will retry on next poll cycle
+        const attempts = parseInt(session.metadata[&quot;promptDeliveryAttempts&quot;] ?? &quot;0&quot;) + 1;
+        updateMetadata(sessionsDir, session.id, {
+          promptDeliveryAttempts: String(attempts),
+        });
+
+        if (attempts &gt;= 5) {
+          // Give up — notify human
+          await notifier?.notify({
+            type: &quot;prompt-delivery-failed&quot;,
+            sessionId: session.id,
+            message: `Failed to deliver prompt after ${attempts} attempts`,
+          });
+        }
+      }
+    }
+  }
+}</code></pre>
+<p><strong>Pros:</strong> - Spawn returns immediately (no blocking) -
+Natural retry — lifecycle polls every 30s, so retries happen
+automatically - Delivery only attempted when agent is confirmed ready -
+Fits the existing architecture (lifecycle manager already handles
+session state) - Notification on permanent failure</p>
+<p><strong>Cons:</strong> - Prompt delivery delayed by up to one poll
+interval (30s) - Metadata gets more complex (pendingPrompt field) -
+Large prompts stored in metadata files (could be multi-KB) - Lifecycle
+manager gets more responsibility - Requires lifecycle manager to be
+running (doesn’t work for standalone <code>ao spawn</code> without
+<code>ao start</code>)</p>
+<p><strong>Verdict:</strong> Architecturally clean but adds latency and
+complexity. Best if spawn-time blocking is unacceptable.</p>
+<hr />
+<h3 id="approach-5-retry-verification-notification-recommended">Approach
+5: Retry + Verification + Notification (Recommended)</h3>
+<p><strong>Change:</strong> Combine the best parts of approaches 1-3:
+poll for ready state, deliver with retry, verify delivery, notify on
+failure.</p>
+<pre class="typescript"><code>interface PromptDeliveryResult {
+  delivered: boolean;
+  attempts: number;
+  error?: string;
+}
+
+async function deliverPostLaunchPrompt(
+  runtime: Runtime,
+  agent: Agent,
+  handle: RuntimeHandle,
+  prompt: string,
+): Promise&lt;PromptDeliveryResult&gt; {
+  const MAX_ATTEMPTS = 3;
+  const READY_TIMEOUT_MS = 15_000;
+  const READY_POLL_MS = 1_000;
+  const POST_SEND_VERIFY_DELAY_MS = 2_000;
+
+  // Phase 1: Wait for agent to be ready (up to 15s)
+  const readyDeadline = Date.now() + READY_TIMEOUT_MS;
+  let agentReady = false;
+
+  while (Date.now() &lt; readyDeadline) {
+    try {
+      const output = await runtime.getOutput(handle, 10);
+      const activity = agent.detectActivity(output);
+      if (activity === &quot;waiting_input&quot; || activity === &quot;idle&quot;) {
+        agentReady = true;
+        break;
+      }
+    } catch {
+      // Not ready yet
+    }
+    await sleep(READY_POLL_MS);
+  }
+
+  if (!agentReady) {
+    // Fall back to fixed delay (agent might be ready but detectActivity
+    // doesn&#39;t recognize the initial screen)
+    await sleep(5_000);
+  }
+
+  // Phase 2: Send with retry
+  let lastError: string | undefined;
+  for (let attempt = 1; attempt &lt;= MAX_ATTEMPTS; attempt++) {
+    try {
+      await runtime.sendMessage(handle, prompt);
+
+      // Phase 3: Verify delivery — check if agent started processing
+      await sleep(POST_SEND_VERIFY_DELAY_MS);
+      try {
+        const postOutput = await runtime.getOutput(handle, 15);
+        const postActivity = agent.detectActivity(postOutput);
+        // If agent is now &quot;active&quot; or output changed, delivery worked
+        if (postActivity === &quot;active&quot; || postActivity === &quot;processing&quot;) {
+          return { delivered: true, attempts: attempt };
+        }
+        // If still &quot;waiting_input&quot;, the Enter key might not have registered
+        // (same root cause as #564). Retry.
+        if (postActivity === &quot;waiting_input&quot; &amp;&amp; attempt &lt; MAX_ATTEMPTS) {
+          console.warn(
+            `[spawn] Prompt may not have been submitted (attempt ${attempt}), retrying...`
+          );
+          continue;
+        }
+      } catch {
+        // Can&#39;t verify — assume it worked
+      }
+
+      return { delivered: true, attempts: attempt };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[spawn] Prompt delivery attempt ${attempt}/${MAX_ATTEMPTS} failed: ${lastError}`
+      );
+      if (attempt &lt; MAX_ATTEMPTS) {
+        await sleep(3_000 * attempt); // 3s, 6s backoff between retries
+      }
+    }
+  }
+
+  return { delivered: false, attempts: MAX_ATTEMPTS, error: lastError };
+}</code></pre>
+<p><strong>Usage in spawn():</strong></p>
+<pre class="typescript"><code>if (plugins.agent.promptDelivery === &quot;post-launch&quot; &amp;&amp; agentLaunchConfig.prompt) {
+  const result = await deliverPostLaunchPrompt(
+    plugins.runtime, plugins.agent, handle, agentLaunchConfig.prompt
+  );
+
+  updateMetadata(sessionsDir, sessionId, {
+    promptDelivered: String(result.delivered),
+    promptDeliveryAttempts: String(result.attempts),
+    ...(result.error ? { promptDeliveryError: result.error } : {}),
+  });
+
+  if (!result.delivered) {
+    console.error(
+      `[spawn] ⚠️  Prompt delivery failed for ${sessionId} after ${result.attempts} attempts. ` +
+      `Agent is running but idle. Use \`ao send ${sessionId}\` to retry.`
+    );
+
+    // Notify via configured notifier
+    const notifier = project.notifier
+      ? registry.get&lt;Notifier&gt;(&quot;notifier&quot;, project.notifier.plugin)
+      : null;
+    if (notifier) {
+      await notifier.notify({
+        projectId: session.projectId,
+        event: {
+          type: &quot;session.spawn_warning&quot;,
+          priority: &quot;warning&quot;,
+          sessionId,
+          message: `Prompt delivery failed for ${sessionId}. Agent spawned but idle. Retry with: ao send ${sessionId}`,
+        },
+      }).catch(() =&gt; {}); // Don&#39;t fail spawn on notification error
+    }
+  }
+}</code></pre>
+<p><strong>Timeline:</strong></p>
+<pre><code>0s        Start: poll for agent ready
+0-15s     Polling... (exits early when ready)
+~7s       Agent ready detected → send prompt
+~7.3s     sendMessage completes
+~9.3s     Verify: check if agent is processing
+~9.3s     ✅ Delivered! Return.
+
+Or if first attempt fails:
+~7.3s     sendMessage fails
+~10.3s    Retry #2
+~13.3s    Verify #2
+~13.3s    ✅ Delivered on 2nd attempt.
+
+Worst case (all fail):
+~30s      3 attempts exhausted → notify human</code></pre>
+<p><strong>Pros:</strong> - Adapts to agent startup time (no unnecessary
+waiting) - Verifies delivery actually worked (catches #564 Enter race
+too) - Retries with backoff on failure - Notifies human when all retries
+fail - Records attempt history in metadata (debuggable) - Falls back
+gracefully when detection doesn’t work</p>
+<p><strong>Cons:</strong> - Most complex approach (~60 lines) - Can
+block spawn for up to 30s in worst case - Verification heuristic may not
+be 100% accurate</p>
+<p><strong>Verdict:</strong> ✅ <strong>Recommended.</strong> This is
+the most robust fix with the best tradeoffs. It handles all known
+failure modes, verifies success, retries intelligently, and fails
+loudly.</p>
+<hr />
+<h2 id="comparison-matrix">Comparison Matrix</h2>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Criteria</th>
+<th>Approach 1</th>
+<th>Approach 2</th>
+<th>Approach 3</th>
+<th>Approach 4</th>
+<th>Approach 5</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Fixes the bug</strong></td>
+<td>❌ No</td>
+<td>✅ Usually</td>
+<td>✅ Usually</td>
+<td>✅ Yes</td>
+<td>✅ Yes</td>
+</tr>
+<tr class="even">
+<td><strong>Handles slow startup</strong></td>
+<td>❌</td>
+<td>⚠️ Fixed guess</td>
+<td>✅ Adaptive</td>
+<td>✅ Waits for ready</td>
+<td>✅ Adaptive</td>
+</tr>
+<tr class="odd">
+<td><strong>Verifies delivery</strong></td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>⚠️ Next poll</td>
+<td>✅ Immediate</td>
+</tr>
+<tr class="even">
+<td><strong>Retries</strong></td>
+<td>❌</td>
+<td>✅ 3x</td>
+<td>❌</td>
+<td>✅ Every 30s</td>
+<td>✅ 3x</td>
+</tr>
+<tr class="odd">
+<td><strong>Notifies on failure</strong></td>
+<td>⚠️ Log only</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr class="even">
+<td><strong>Spawn-time blocking</strong></td>
+<td>~5s</td>
+<td>~24s worst</td>
+<td>~30s worst</td>
+<td>None</td>
+<td>~30s worst</td>
+</tr>
+<tr class="odd">
+<td><strong>Complexity</strong></td>
+<td>Low</td>
+<td>Low</td>
+<td>Medium</td>
+<td>High</td>
+<td>Medium</td>
+</tr>
+<tr class="even">
+<td><strong>Works without lifecycle</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="recommended-implementation-plan">Recommended Implementation
+Plan</h2>
+<h3 id="phase-1-immediate-approach-1-2-combined">Phase 1: Immediate
+(Approach 1 + 2 combined)</h3>
+<ol type="1">
+<li>Replace bare <code>catch {}</code> with logging</li>
+<li>Add <code>promptDelivered</code> metadata flag</li>
+<li>Add 3x retry with exponential backoff</li>
+<li><strong>Ship this as a quick fix — covers 90% of cases</strong></li>
+</ol>
+<h3 id="phase-2-robust-approach-5">Phase 2: Robust (Approach 5)</h3>
+<ol type="1">
+<li>Add ready-state polling before delivery</li>
+<li>Add post-delivery verification</li>
+<li>Add notification on permanent failure</li>
+<li>Update lifecycle manager to flag <code>spawning → needs_input</code>
+within 60s as anomalous</li>
+</ol>
+<h3 id="files-changed">Files Changed</h3>
+<table>
+<colgroup>
+<col style="width: 28%" />
+<col style="width: 38%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+<th>Phase</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/core/src/session-manager.ts</code></td>
+<td>Replace bare catch with retry + verify + notify</td>
+<td>1+2</td>
+</tr>
+<tr class="even">
+<td><code>packages/core/src/lifecycle-manager.ts</code></td>
+<td>Anomaly detection for fast needs_input</td>
+<td>2</td>
+</tr>
+<tr class="odd">
+<td><code>packages/core/src/metadata.ts</code></td>
+<td>No changes (uses existing updateMetadata)</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td><code>packages/plugins/runtime-tmux/src/index.ts</code></td>
+<td>No changes (sendMessage API is fine)</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="summary">Summary</h2>
+<p>The bug is a bare <code>catch {}</code> that swallows prompt delivery
+failures. The fix isn’t just adding a retry — it’s building a delivery
+pipeline that adapts to agent startup time, verifies the agent actually
+received the prompt, retries when it didn’t, and tells someone when all
+else fails.</p>
+<p><strong>Start with Approach 1+2 (quick fix), then upgrade to Approach
+5 (robust).</strong></p>
+<p>The worst thing about this bug isn’t the technical failure — it’s the
+silence. A system that fails and says nothing is worse than a system
+that fails loudly. Even Approach 1 alone (just logging) would have saved
+the 10 minutes of debugging that discovered this issue.</p>
+      </div>
+    </main>
+  </body>
+</html>
