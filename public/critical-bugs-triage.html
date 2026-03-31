@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Critical Bugs Triage — Agent Orchestrator Design</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f2efe7;
+        --panel: #fffdf8;
+        --ink: #1f1a16;
+        --muted: #6f6357;
+        --brand: #165a72;
+        --line: #dfd3c2;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        color: var(--ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        line-height: 1.65;
+        background:
+          radial-gradient(circle at 12% 10%, #ebdfcb 0%, transparent 35%),
+          radial-gradient(circle at 88% 85%, #e5d4ba 0%, transparent 30%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .back {
+        display: inline-block;
+        margin-bottom: 1.5rem;
+        color: var(--brand);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      .back:hover { text-decoration: underline; }
+
+      h1, h2, h3, h4 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      h1 {
+        font-size: 2rem;
+        line-height: 1.25;
+        margin-bottom: 0.3rem;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h2 {
+        font-size: 1.45rem;
+        margin-top: 2.5rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h3 {
+        font-size: 1.15rem;
+        margin-top: 1.8rem;
+        margin-bottom: 0.4rem;
+      }
+
+      h4 {
+        font-size: 1rem;
+        margin-top: 1.4rem;
+        margin-bottom: 0.3rem;
+      }
+
+      p { margin: 0.7rem 0; }
+
+      ul, ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      li { margin-bottom: 0.25rem; }
+
+      a { color: var(--brand); }
+
+      code {
+        font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+        background: #f3ebe0;
+        border-radius: 4px;
+        padding: 0.12rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      pre {
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #faf4ec;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.85em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--line);
+      }
+
+      th {
+        background: #f3ebe0;
+        font-weight: 600;
+        font-family: "IBM Plex Serif", Georgia, serif;
+      }
+
+      tr:nth-child(even) td { background: #fdfbf7; }
+
+      blockquote {
+        margin: 1rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--brand);
+        background: var(--panel);
+        border-radius: 0 10px 10px 0;
+        color: var(--muted);
+      }
+
+      blockquote p { margin: 0.3rem 0; }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--line);
+        margin: 2rem 0;
+      }
+
+      strong { font-weight: 600; }
+
+      .content {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        padding: 2rem 2.5rem;
+      }
+
+      @media (max-width: 600px) {
+        .content { padding: 1.2rem 1rem; }
+        h1 { font-size: 1.5rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <a href="/" class="back">← All Design Docs</a>
+      <div class="content">
+<h1 id="critical-bugs-triage-agent-orchestrator">Critical Bugs Triage —
+Agent Orchestrator</h1>
+<p><strong>Date:</strong> March 31, 2026 <strong>Author:</strong> Deepak
+Veluvolu</p>
+<hr />
+<h2 id="overview">Overview</h2>
+<p>After auditing 100+ open issues on <a
+href="https://github.com/ComposioHQ/agent-orchestrator">ComposioHQ/agent-orchestrator</a>,
+the following bugs are the highest-priority fixes. These cause
+<strong>silent failures, crash loops, orphaned processes, and broken
+worker sessions</strong> — directly impacting reliability and user
+trust.</p>
+<p>Ranked by severity × blast radius.</p>
+<hr />
+<h2 id="silent-prompt-delivery-failure-718">1. Silent Prompt Delivery
+Failure (#718)</h2>
+<p><strong>Severity:</strong> 🔴 Critical — sessions spawn but do
+nothing, no one is notified</p>
+<h3 id="problem">Problem</h3>
+<p>When AO spawns a Claude Code session, the initial prompt is delivered
+post-launch via <code>sendMessage()</code> after a 5-second delay. If
+delivery fails, the error is <strong>silently swallowed</strong> in a
+bare <code>catch {}</code>:</p>
+<pre class="typescript"><code>if (plugins.agent.promptDelivery === &quot;post-launch&quot; &amp;&amp; agentLaunchConfig.prompt) {
+  try {
+    await new Promise((resolve) =&gt; setTimeout(resolve, 5_000));
+    await plugins.runtime.sendMessage(handle, agentLaunchConfig.prompt);
+  } catch {
+    // Non-fatal: agent is running but didn&#39;t receive the initial prompt.
+    // User can retry with `ao send`.
+  }
+}</code></pre>
+<p>The spawn call returns success. The agent sits idle at an empty
+prompt. Nobody knows.</p>
+<h3 id="impact">Impact</h3>
+<ul>
+<li>Wasted compute time (agent idle, no work done)</li>
+<li>User trust erosion — AO reports success but nothing happens</li>
+<li>Manual intervention required to detect and fix</li>
+</ul>
+<h3 id="fix">Fix</h3>
+<p><strong>A. Retry with backoff</strong> (primary fix):</p>
+<pre class="typescript"><code>async function deliverPromptWithRetry(
+  runtime: RuntimePlugin,
+  handle: RuntimeHandle,
+  prompt: string,
+  maxRetries = 3
+): Promise&lt;boolean&gt; {
+  for (let attempt = 0; attempt &lt; maxRetries; attempt++) {
+    try {
+      const delay = 5_000 + attempt * 3_000; // 5s, 8s, 11s
+      await sleep(delay);
+      await runtime.sendMessage(handle, prompt);
+      return true;
+    } catch (err) {
+      log.warn(`Prompt delivery attempt ${attempt + 1} failed`, { err });
+    }
+  }
+  return false;
+}</code></pre>
+<p><strong>B. Surface failure to caller:</strong></p>
+<pre class="typescript"><code>const delivered = await deliverPromptWithRetry(plugins.runtime, handle, prompt);
+if (!delivered) {
+  log.error(&quot;Prompt delivery failed after retries&quot;, { sessionId });
+  session.metadata.promptDeliveryFailed = true;
+  // Notify via configured notifier
+  await plugins.notifier?.notify({
+    type: &quot;spawn-warning&quot;,
+    message: `Session ${sessionId} spawned but prompt delivery failed. Use \`ao send\` to retry.`,
+  });
+}</code></pre>
+<p><strong>C. Lifecycle anomaly detection:</strong></p>
+<p>A freshly spawned session transitioning to <code>needs_input</code>
+within 30 seconds is almost certainly a failed prompt. The lifecycle
+manager should flag this:</p>
+<pre class="typescript"><code>if (session.status === &quot;needs_input&quot; &amp;&amp; session.age &lt; 30_000 &amp;&amp; !session.metadata.promptDelivered) {
+  await this.fireReaction(session, &quot;prompt-delivery-failed&quot;);
+}</code></pre>
+<h3 id="files-changed">Files Changed</h3>
+<table>
+<colgroup>
+<col style="width: 42%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/core/src/session-manager.ts</code></td>
+<td>Replace bare catch with retry + notification</td>
+</tr>
+<tr class="even">
+<td><code>packages/core/src/lifecycle-manager.ts</code></td>
+<td>Add anomaly detection for early <code>needs_input</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="tmux-server-dies-silently-crash-loop-695">2. tmux Server Dies
+Silently → Crash Loop (#695)</h2>
+<p><strong>Severity:</strong> 🔴 Critical — orchestrator becomes
+unreachable, dashboard orphaned</p>
+<h3 id="problem-1">Problem</h3>
+<p>The tmux server dies silently after ~5 minutes. The orchestrator
+session disappears. The Next.js dashboard stays alive as an orphan on
+its port. Subsequent <code>ao start</code> picks a new port, compounding
+the mess.</p>
+<p>After 5 start/stop cycles, you can have 5+ orphaned processes
+fighting for ports.</p>
+<h3 id="root-cause">Root Cause</h3>
+<p>No health monitoring of the tmux server. When it dies: 1. Lifecycle
+manager can’t poll sessions (tmux commands fail) 2. No restart mechanism
+exists 3. Dashboard isn’t notified 4. <code>ao stop</code> can’t find
+the orphaned dashboard (wrong port)</p>
+<h3 id="fix-1">Fix</h3>
+<p><strong>A. tmux health watchdog</strong> in lifecycle manager:</p>
+<pre class="typescript"><code>class TmuxWatchdog {
+  private checkInterval = 15_000; // 15s
+
+  async check(): Promise&lt;boolean&gt; {
+    try {
+      await exec(&quot;tmux&quot;, [&quot;list-sessions&quot;]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async ensureAlive(): Promise&lt;void&gt; {
+    const alive = await this.check();
+    if (!alive) {
+      log.error(&quot;tmux server died — attempting restart&quot;);
+      await exec(&quot;tmux&quot;, [&quot;new-session&quot;, &quot;-d&quot;, &quot;-s&quot;, &quot;ao-watchdog&quot;]);
+      // Re-create orchestrator session
+      await this.restoreOrchestratorSession();
+    }
+  }
+}</code></pre>
+<p><strong>B. Process group cleanup on stop:</strong></p>
+<pre class="typescript"><code>async function stopAll(): Promise&lt;void&gt; {
+  // Kill by process group, not just port
+  const pids = await findProcessesByName([&quot;next-server&quot;, &quot;terminal-websocket&quot;, &quot;direct-terminal-ws&quot;]);
+  for (const pid of pids) {
+    process.kill(pid, &quot;SIGTERM&quot;);
+  }
+  // Also kill tmux sessions
+  await exec(&quot;tmux&quot;, [&quot;kill-server&quot;]).catch(() =&gt; {});
+}</code></pre>
+<p><strong>C. PID file with port tracking:</strong></p>
+<p>Write the actual assigned port to <code>running.json</code> so
+<code>ao stop</code> always knows where the dashboard lives, even after
+port reassignment.</p>
+<h3 id="files-changed-1">Files Changed</h3>
+<table>
+<colgroup>
+<col style="width: 42%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/core/src/lifecycle-manager.ts</code></td>
+<td>Add tmux watchdog to poll cycle</td>
+</tr>
+<tr class="even">
+<td><code>packages/cli/src/commands/start.ts</code></td>
+<td>Write actual port to <code>running.json</code> after startup</td>
+</tr>
+<tr class="odd">
+<td><code>packages/cli/src/commands/stop.ts</code></td>
+<td>Kill by process tree, not just port</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="killed-sessions-with-open-prs-go-dark-700">3. Killed Sessions
+with Open PRs Go Dark (#700)</h2>
+<p><strong>Severity:</strong> 🔴 Critical — merged/failed PRs get no
+reaction after agent exits</p>
+<h3 id="problem-2">Problem</h3>
+<p>When a worker agent exits (<code>status: killed</code>), the
+lifecycle manager stops polling that session entirely. If the PR is
+still open, CI failures, merge conflicts, and approvals are never
+detected.</p>
+<h3 id="root-cause-1">Root Cause</h3>
+<p>Two issues in <code>lifecycle-manager.ts</code>:</p>
+<ol type="1">
+<li><strong><code>sessionsToCheck</code> filter</strong>: Killed
+sessions are excluded after the initial transition cycle</li>
+<li><strong><code>determineStatus</code> early return</strong>: Dead
+runtime is detected → returns <code>"killed"</code> immediately,
+skipping PR state checks</li>
+</ol>
+<h3 id="fix-2">Fix</h3>
+<p><strong>A. Keep polling sessions with open PRs:</strong></p>
+<pre class="typescript"><code>const sessionsToCheck = sessions.filter(s =&gt;
+  isActiveStatus(s.status) ||
+  (s.status === &quot;killed&quot; &amp;&amp; s.pr?.state === &quot;open&quot;)
+);</code></pre>
+<p><strong>B. Skip runtime checks for already-killed
+sessions:</strong></p>
+<pre class="typescript"><code>async determineStatus(session: Session): Promise&lt;Status&gt; {
+  // For killed sessions with open PRs, skip runtime liveness check
+  // and proceed directly to PR state evaluation
+  if (session.status === &quot;killed&quot; &amp;&amp; session.pr?.state === &quot;open&quot;) {
+    return this.evaluatePRState(session);
+  }
+
+  // Normal flow: check runtime first
+  const alive = await this.checkRuntime(session);
+  if (!alive) return &quot;killed&quot;;
+
+  return this.evaluatePRState(session);
+}</code></pre>
+<p><strong>C. Define reactions for orphaned PRs:</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th>PR State</th>
+<th>Reaction</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CI failed</td>
+<td><code>ci-failed</code></td>
+<td>Respawn agent to fix</td>
+</tr>
+<tr class="even">
+<td>Merge conflicts</td>
+<td><code>merge-conflicts</code></td>
+<td>Respawn agent to rebase</td>
+</tr>
+<tr class="odd">
+<td>Approved + green</td>
+<td><code>approved-and-green</code></td>
+<td>Auto-merge</td>
+</tr>
+<tr class="even">
+<td>Changes requested</td>
+<td><code>changes-requested</code></td>
+<td>Respawn agent to address</td>
+</tr>
+</tbody>
+</table>
+<h3 id="files-changed-2">Files Changed</h3>
+<table>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/core/src/lifecycle-manager.ts</code></td>
+<td>Fix filter + early return</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="claude-code-bypass-permissions-prompt-blocks-workers-817">4.
+Claude Code Bypass Permissions Prompt Blocks Workers (#817)</h2>
+<p><strong>Severity:</strong> 🔴 Critical — all permissionless worker
+sessions broken</p>
+<h3 id="problem-3">Problem</h3>
+<p>Claude Code v2.1.x added an interactive confirmation prompt for
+<code>--dangerously-skip-permissions</code>:</p>
+<pre><code>WARNING: Claude Code running in Bypass Permissions mode
+❯ 1. No, exit
+  2. Yes, I accept</code></pre>
+<p>tmux sessions are non-interactive — no one presses the keys. Workers
+spawn, hit the prompt, and exit immediately.</p>
+<h3 id="fix-3">Fix</h3>
+<p><strong>A. Auto-accept via tmux keystroke injection:</strong></p>
+<pre class="typescript"><code>function getLaunchCommand(config: AgentConfig): string {
+  const baseCmd = `claude --dangerously-skip-permissions`;
+
+  if (config.permissions === &quot;permissionless&quot;) {
+    // Background subshell auto-accepts the bypass prompt
+    return `(sleep 3 &amp;&amp; tmux send-keys -t &quot;$AO_TMUX_NAME&quot; Down Enter 2&gt;/dev/null) &amp; ${baseCmd}`;
+  }
+
+  return baseCmd;
+}</code></pre>
+<p><strong>B. Check for <code>--yes</code> flag first:</strong></p>
+<p>Claude Code may support <code>--yes</code> or <code>--accept</code>
+in future versions. Check release notes and prefer a non-interactive
+flag if available:</p>
+<pre class="typescript"><code>const supportsYesFlag = await detectClaudeCodeVersion() &gt;= &quot;2.1.5&quot;;
+if (supportsYesFlag) {
+  return `claude --dangerously-skip-permissions --yes`;
+}
+// Fallback to tmux keystroke injection</code></pre>
+<h3 id="files-changed-3">Files Changed</h3>
+<table>
+<colgroup>
+<col style="width: 42%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/plugins/agent-claude-code/src/index.ts</code></td>
+<td>Add auto-accept wrapper</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="bot-review-comments-leak-through-filter-702">5. Bot Review
+Comments Leak Through Filter (#702)</h2>
+<p><strong>Severity:</strong> 🟡 High — agents receive duplicate work
+from same bot comment</p>
+<h3 id="problem-4">Problem</h3>
+<p>GitHub’s GraphQL API returns bot logins <strong>without</strong> the
+<code>[bot]</code> suffix, while REST API includes it. The
+<code>BOT_AUTHORS</code> filter only has <code>[bot]</code>
+variants:</p>
+<table>
+<thead>
+<tr class="header">
+<th>API</th>
+<th>Login returned</th>
+<th>BOT_AUTHORS match?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GraphQL</td>
+<td><code>cursor</code></td>
+<td>❌ No</td>
+</tr>
+<tr class="even">
+<td>REST</td>
+<td><code>cursor[bot]</code></td>
+<td>✅ Yes</td>
+</tr>
+</tbody>
+</table>
+<p>Bot comments pass through <code>getPendingComments()</code> (GraphQL)
+as “human” comments, triggering a <code>changes-requested</code>
+reaction. The same comments are caught by
+<code>getAutomatedComments()</code> (REST), triggering
+<code>bugbot-comments</code>. The agent gets both — duplicate work.</p>
+<h3 id="fix-4">Fix</h3>
+<p>Add <code>__typename</code> check to the GraphQL filter:</p>
+<pre class="typescript"><code>// In getPendingComments() thread filter
+const isBot =
+  comment.author?.__typename === &quot;Bot&quot; ||
+  BOT_AUTHORS.has(comment.author?.login ?? &quot;&quot;) ||
+  BOT_AUTHORS.has(`${comment.author?.login}[bot]`);
+
+if (isBot) continue;</code></pre>
+<p>Update the GraphQL query to include <code>__typename</code>:</p>
+<pre class="graphql"><code>author {
+  login
+  __typename
+}</code></pre>
+<h3 id="files-changed-4">Files Changed</h3>
+<table>
+<colgroup>
+<col style="width: 42%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/plugins/scm-github/src/index.ts</code></td>
+<td>Add <code>__typename</code> to query + filter</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="var-references-not-expanded-in-config-701">6. ${VAR} References
+Not Expanded in Config (#701)</h2>
+<p><strong>Severity:</strong> 🟡 High — users forced to hardcode secrets
+in config file</p>
+<h3 id="problem-5">Problem</h3>
+<p><code>agent-orchestrator.yaml</code> doesn’t expand
+<code>${ENV_VAR}</code> placeholders. Webhook URLs, API tokens, etc.
+must be hardcoded.</p>
+<h3 id="fix-5">Fix</h3>
+<p>Add substitution pass before YAML parsing in
+<code>config.ts</code>:</p>
+<pre class="typescript"><code>function expandEnvVars(raw: string): string {
+  return raw.replace(/\$\{([^}]+)\}/g, (match, varName) =&gt; {
+    const value = process.env[varName.trim()];
+    if (value === undefined) {
+      log.warn(`Config references undefined env var: ${varName}`);
+      return match; // Leave placeholder unchanged
+    }
+    return value;
+  });
+}
+
+export function loadConfig(configPath: string): Config {
+  const raw = readFileSync(configPath, &quot;utf-8&quot;);
+  const expanded = expandEnvVars(raw);
+  return parseYaml(expanded) as Config;
+}</code></pre>
+<h3 id="files-changed-5">Files Changed</h3>
+<table>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/core/src/config.ts</code></td>
+<td>Add <code>expandEnvVars()</code> before parse</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="tmp-.so-file-leak-with-opencode-agent-835">7. /tmp .so File Leak
+with OpenCode Agent (#835)</h2>
+<p><strong>Severity:</strong> 🟡 High — disk exhaustion over hours</p>
+<h3 id="problem-6">Problem</h3>
+<p>The OpenCode agent plugin runs
+<code>/usr/local/lib/.../opencode install --no-cache</code> repeatedly
+during lifecycle, each invocation creating a new <code>.so</code> file
+in <code>/tmp</code>. After a few hours: 4,000+ files, disk full,
+service dies.</p>
+<h3 id="fix-6">Fix</h3>
+<p><strong>A. Cache the detection result:</strong></p>
+<pre class="typescript"><code>let openCodeDetected: boolean | null = null;
+
+function detect(): boolean {
+  if (openCodeDetected !== null) return openCodeDetected;
+  openCodeDetected = /* actual detection */;
+  return openCodeDetected;
+}</code></pre>
+<p><strong>B. Skip <code>install --no-cache</code> if already
+installed:</strong></p>
+<pre class="typescript"><code>async function ensureInstalled(): Promise&lt;void&gt; {
+  if (await isInstalled()) return; // Check binary exists
+  await exec(&quot;opencode&quot;, [&quot;install&quot;]); // Only run once
+}</code></pre>
+<p><strong>C. Cleanup stale .so files on stop:</strong></p>
+<pre class="typescript"><code>// In ao stop
+await exec(&quot;find&quot;, [&quot;/tmp&quot;, &quot;-name&quot;, &quot;*-00000000.so&quot;, &quot;-delete&quot;]);</code></pre>
+<h3 id="files-changed-6">Files Changed</h3>
+<table>
+<colgroup>
+<col style="width: 42%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>packages/plugins/agent-opencode/src/index.ts</code></td>
+<td>Cache detection, skip redundant installs</td>
+</tr>
+<tr class="even">
+<td><code>packages/cli/src/commands/stop.ts</code></td>
+<td>Clean up /tmp .so files</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="priority-matrix">Priority Matrix</h2>
+<table>
+<thead>
+<tr class="header">
+<th>#</th>
+<th>Issue</th>
+<th>Severity</th>
+<th>Effort</th>
+<th>Fix First?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>#718 Silent prompt failure</td>
+<td>🔴 Critical</td>
+<td>Medium</td>
+<td>✅ Yes</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>#695 tmux crash loop</td>
+<td>🔴 Critical</td>
+<td>High</td>
+<td>✅ Yes</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>#700 Killed sessions go dark</td>
+<td>🔴 Critical</td>
+<td>Low</td>
+<td>✅ Yes</td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td>#817 Bypass prompt blocks workers</td>
+<td>🔴 Critical</td>
+<td>Low</td>
+<td>✅ Yes</td>
+</tr>
+<tr class="odd">
+<td>5</td>
+<td>#702 Bot comment leak</td>
+<td>🟡 High</td>
+<td>Low</td>
+<td>✅ Yes</td>
+</tr>
+<tr class="even">
+<td>6</td>
+<td>#701 Config env var expansion</td>
+<td>🟡 High</td>
+<td>Low</td>
+<td>Next</td>
+</tr>
+<tr class="odd">
+<td>7</td>
+<td>#835 /tmp .so leak</td>
+<td>🟡 High</td>
+<td>Low</td>
+<td>Next</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommended order:</strong> #700 → #817 → #718 → #702 → #701
+→ #835 → #695</p>
+<p>Start with #700 and #817 — lowest effort, highest impact. Then #718
+(the silent failure everyone hits). Save #695 (tmux watchdog) for last
+since it’s the most complex.</p>
+<hr />
+<h2 id="summary">Summary</h2>
+<p>Seven bugs. Four are critical — silent failures that break core
+workflows with no user-visible error. Three are high-severity — cause
+wasted resources or force unsafe workarounds.</p>
+<p>Combined, these fixes would eliminate the most common failure modes
+reported in the last two weeks of issues.</p>
+      </div>
+    </main>
+  </body>
+</html>
